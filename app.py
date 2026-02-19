@@ -33,30 +33,7 @@ def color_tw_col(s):
             else '' for v in s]
 
 # ==========================================
-# 🔒 隱私防護系統：請在這裡設定你的專屬密碼
-# ==========================================
-APP_PASSWORD = "8888" 
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if not st.session_state["authenticated"]:
-    st.title("🔒 帥順專屬系統已上鎖")
-    st.info("此為私人財務追蹤系統，請輸入密碼以進行解鎖。")
-    
-    pwd_input = st.text_input("🔑 請輸入密碼：", type="password")
-    
-    if st.button("解鎖登入"):
-        if pwd_input == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun() 
-        else:
-            st.error("❌ 密碼錯誤，請重新輸入。")
-            
-    st.stop() 
-
-# ==========================================
-# 🔓 以下為密碼正確後，才會顯示的正式內容
+# 🚀 正式內容開始 (已暫時關閉密碼鎖功能)
 # ==========================================
 st.title("🚀 帥順股市分析與資產管理神器")
 
@@ -261,10 +238,9 @@ with tab2:
                 
             df_portfolio = pd.DataFrame(display_list)
             
-            # 🌟 升級點：強迫將 DataFrame 的預設索引 (0, 1, 2...) 全部加 1，變成正常的 (1, 2, 3...)
+            # 強迫將 DataFrame 的預設索引加 1，變成正常的 (1, 2, 3...)
             df_portfolio.index = df_portfolio.index + 1
             
-            # 將上色的 CSS 套用上去
             styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
