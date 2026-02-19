@@ -5,18 +5,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.momentum import RSIIndicator, StochasticOscillator
 import twstock
-import requests
 
 # 把網頁標籤也改成帥順的專屬名稱
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
-
-# ==========================================
-# 🛡️ 破解 Yahoo 阻擋機制：偽裝成真人瀏覽器
-# ==========================================
-yf_session = requests.Session()
-yf_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-})
 
 # ==========================================
 # 🔒 隱私防護系統：請在這裡設定你的專屬密碼
@@ -104,8 +95,8 @@ with tab1:
     if ticker_symbol:
         st.subheader(f"正在分析： **{display_name}**")
         
-        # 傳入偽裝通道去抓資料
-        ticker_data = yf.Ticker(ticker_symbol, session=yf_session)
+        # 🌟 修改點：移除 session，讓 yfinance 自己用最高級的方式抓資料
+        ticker_data = yf.Ticker(ticker_symbol)
         df = ticker_data.history(period="1y")
         
         if not df.empty:
@@ -167,8 +158,8 @@ with tab2:
         items = list(MY_PORTFOLIO.items())
         
         for i, (symbol, info) in enumerate(items):
-            # 投資組合也要傳入偽裝通道
-            tick = yf.Ticker(symbol, session=yf_session)
+            # 🌟 修改點：同樣移除 session
+            tick = yf.Ticker(symbol)
             hist = tick.history(period="1d")
             
             if not hist.empty:
