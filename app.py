@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.momentum import RSIIndicator, StochasticOscillator
-from ta.trend import MACD  # 🌟 新增 MACD 模組
+from ta.trend import MACD
 import twstock
 
 # 把網頁標籤也改成帥順的專屬名稱
@@ -67,7 +67,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與警示 (🌟 史詩級大升級)
+# 分頁 1：個股技術分析與警示
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -99,7 +99,6 @@ with tab1:
     if ticker_symbol:
         st.subheader(f"📊 **{display_name}** - 專業技術線圖")
         
-        # 🌟 升級 1 & 2：建立超強大的參數控制面板
         col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
         with col_ctrl1:
             tf_option = st.radio("⏳ K線週期", ["日線", "週線", "月線", "年線"], horizontal=True)
@@ -112,15 +111,12 @@ with tab1:
             
         show_pe_river = st.checkbox("🌊 疊加本益比河流圖 (僅適用有獲利之個股)", value=False)
         
-        # 撈取長達 10 年的資料以確保長天期均線 (如 240ma) 算得出來
         ticker_data = yf.Ticker(ticker_symbol)
         df_raw = ticker_data.history(period="10y")
         
         if not df_raw.empty:
-            # 移除時區資訊，避免 pandas 轉換週期時報錯
             df_raw.index = df_raw.index.tz_localize(None)
             
-            # 🌟 升級 2：根據選擇的週期重新取樣 (Resample)
             if tf_option == "日線":
                 df = df_raw.copy()
             elif tf_option == "週線":
@@ -130,7 +126,6 @@ with tab1:
             elif tf_option == "年線":
                 df = df_raw.resample('YE').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
 
-            # 🌟 升級 1：動態計算勾選的均線
             ma_colors = ['#FFA500', '#FF1493', '#00BFFF', '#9932CC', '#32CD32', '#FF0000', '#0000FF']
             ma_lines = {}
             for i, ma_str in enumerate(selected_mas):
@@ -138,7 +133,6 @@ with tab1:
                 df[f'MA{ma_val}'] = df['Close'].rolling(window=ma_val).mean()
                 ma_lines[f'MA{ma_val}'] = ma_colors[i % len(ma_colors)]
 
-            # 🌟 升級 3：動態計算技術指標
             if "KD" in selected_inds:
                 kd = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=9, smooth_window=3)
                 df['K'] = kd.stoch()
@@ -152,14 +146,11 @@ with tab1:
                 rsi = RSIIndicator(close=df['Close'], window=14)
                 df['RSI'] = rsi.rsi()
 
-            # 裁切顯示區間 (避免畫面塞入 10 年的 K 棒變成一條線)
             display_bars = 150 if tf_option != "年線" else len(df)
             df_plot = df.tail(display_bars)
             
-            # 計算最新行情報價
             latest_price = df_plot['Close'].iloc[-1]
             
-            # 動態分配圖表高度與子圖列數
             rows = 1 + len(selected_inds)
             if rows == 1:
                 row_heights = [1.0]
@@ -168,17 +159,14 @@ with tab1:
                 
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
-            # 繪製主圖 K 線
             fig.add_trace(go.Candlestick(
                 x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'],
                 increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
             
-            # 繪製主圖均線
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
 
-            # 🌟 升級 4：本益比河流圖
             if show_pe_river:
                 try:
                     eps = ticker_data.info.get('trailingEps', 0)
@@ -195,7 +183,6 @@ with tab1:
                 except:
                     pass
 
-            # 繪製附圖指標
             current_row = 2
             for ind in selected_inds:
                 if ind == "成交量":
@@ -218,11 +205,22 @@ with tab1:
                 
             fig.update_layout(
                 xaxis_rangeslider_visible=False, 
-                height=400 + 150 * len(selected_inds), # 依據附圖數量自動拉長畫布
-                margin=dict(l=0, r=0, t=30, b=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                height=400 + 150 * len(selected_inds),
+                # 🌟 升級 1：把天花板(t)從 30 挑高到 80，給圖例空間
+                margin=dict(l=10, r=10, t=80, b=10),
+                legend=dict(
+                    orientation="h", 
+                    yanchor="bottom", 
+                    y=1.01,         # 放在圖表頂部的邊緣
+                    xanchor="left", # 統一靠左對齊
+                    x=0.01
+                ),
+                # 🌟 升級 2(a)：把預設的拖曳行為設定為平移 (Pan)，取代原本惱人的框選放大
+                dragmode='pan' 
             )
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # 🌟 升級 2(b)：注入這行 config 設定，強制解鎖兩指雙縮放(Pinch-to-zoom)的超棒手感
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
             
         else:
             st.error("找不到該股票資料，可能是代號錯誤或系統連線異常。")
