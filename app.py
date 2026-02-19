@@ -200,7 +200,8 @@ with tab2:
                     "總成本(含息)": true_stock_cost,
                     "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0),
-                    "報酬率 (%)": round(roi, 2)
+                    # 🌟 這裡把計算結果四捨五入到第 1 位
+                    "報酬率 (%)": round(roi, 1) 
                 })
             my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
             
@@ -226,22 +227,20 @@ with tab2:
         for cat in sorted_categories:
             cat_records = grouped_data[cat]
             
-            # 結算這個人的總資產
             cat_total_cost = sum([p["總成本(含息)"] for p in cat_records])
             cat_total_value = sum([p["目前市值"] for p in cat_records])
             cat_total_profit = sum([p["淨損益"] for p in cat_records])
             cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
             
-            # 專屬大標題
             st.markdown(f"### 👤 【{cat}】的專屬資產")
             
-            # 專屬儀表板
             col1, col2, col3 = st.columns(3)
             col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
             col2.metric("目前總市值", f"${cat_total_value:,.0f}")
-            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.2f}%")
             
-            # 準備專屬表格 (把原本用來分組的 category 隱藏起來，因為標題已經寫了是誰的)
+            # 🌟 儀表板：從 .2f 改成 .1f，顯示小數點第 1 位
+            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%")
+            
             display_list = []
             for p in cat_records:
                 display_item = p.copy()
@@ -249,16 +248,18 @@ with tab2:
                 display_list.append(display_item)
                 
             df_portfolio = pd.DataFrame(display_list)
+            
+            # 🌟 表格格式化：強制規定報酬率欄位只顯示到小數點第 1 位
             st.dataframe(df_portfolio.style.format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
                 "最新股價": "{:.2f}",
                 "總成本(含息)": "${:,.0f}",
                 "目前市值": "${:,.0f}",
-                "淨損益": "${:,.0f}"
+                "淨損益": "${:,.0f}",
+                "報酬率 (%)": "{:.1f}"  
             }), use_container_width=True)
             
-            # 畫一條分隔線，把不同人的區塊清楚切開
             st.divider() 
             
         st.caption("💡 想要修改持股？請直接在手機上開啟您的 Google 試算表更新資料，APP 會在 60 秒內自動同步。")
