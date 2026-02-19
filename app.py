@@ -20,9 +20,16 @@ def load_portfolio(url):
         df = pd.read_csv(url)
         portfolio = {}
         for index, row in df.iterrows():
-            # 確保有資料才加入，並對應 A, B, C 欄的標題 '代號', '成本', '股數'
+            # 確保有資料才加入
             if pd.notna(row['代號']):
-                portfolio[str(row['代號']).strip()] = {'cost': float(row['成本']), 'shares': int(row['股數'])}
+                symbol = str(row['代號']).strip()
+                # 順便抓取 D 欄的股票名稱 (如果有填寫的話)
+                stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else ""
+                portfolio[symbol] = {
+                    'cost': float(row['成本']), 
+                    'shares': int(row['股數']),
+                    'name': stock_name
+                }
         return portfolio
     except Exception as e:
         st.error("讀取試算表失敗，請確認網址是否正確且已設定為 CSV 發布。")
@@ -38,17 +45,24 @@ tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 # 分頁 1：個股技術分析與警示
 # ----------------------------------------
 with tab1:
+    # 自訂下拉選單的顯示格式 (代號 + 名稱)
+    def display_stock(symbol):
+        if symbol in MY_PORTFOLIO and MY_PORTFOLIO[symbol]['name']:
+            return f"{symbol} ({MY_PORTFOLIO[symbol]['name']})"
+        return symbol
+
     stock_options = list(MY_PORTFOLIO.keys()) + ["手動輸入其他代號..."]
-    selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options)
+    selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options, format_func=display_stock)
 
     if selected_option == "手動輸入其他代號...":
-        # 預設改成 00878.TW 讓你方便測試
         ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
+        display_name = ticker_symbol # 手動輸入暫時只顯示代號
     else:
         ticker_symbol = selected_option
+        display_name = display_stock(ticker_symbol)
 
     if ticker_symbol:
-        st.subheader(f"正在分析： **{ticker_symbol}**")
+        st.subheader(f"正在分析： **{display_name}**")
         ticker_data = yf.Ticker(ticker_symbol)
         df = ticker_data.history(period="1y")
         
@@ -118,6 +132,7 @@ with tab2:
                 current_price = hist['Close'].iloc[-1]
                 cost = info['cost']
                 shares = info['shares']
+                stock_name = info['name'] if info['name'] else "未知"
                 
                 # 原始買賣金額
                 stock_cost_raw = cost * shares
@@ -147,7 +162,8 @@ with tab2:
                 total_value += stock_value_raw
                 
                 portfolio_data.append({
-                    "股票代號": f"{symbol} ({type_label})", # 這裡會標示是 ETF 還是個股
+                    "股票名稱": stock_name,
+                    "股票代號": f"{symbol} ({type_label})",
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
