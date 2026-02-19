@@ -26,6 +26,16 @@ def color_tw_col(s):
             else 'color: #00D26A' if isinstance(v, (int, float)) and v < 0 
             else '' for v in s]
 
+# 格式化百分比的小工具
+def fmt_pct(val):
+    if val is None or pd.isna(val): return "無資料"
+    return f"{val * 100:.2f}%"
+
+# 格式化一般數字的小工具
+def fmt_val(val):
+    if val is None or pd.isna(val): return "無資料"
+    return f"{val:.2f}"
+
 # ==========================================
 # 🚀 正式內容開始 (已暫時關閉密碼鎖功能)
 # ==========================================
@@ -67,7 +77,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與警示
+# 分頁 1：個股技術分析與基本面
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -97,6 +107,46 @@ with tab1:
     st.markdown("---")
     
     if ticker_symbol:
+        ticker_data = yf.Ticker(ticker_symbol)
+        
+        # ==========================================
+        # 🌟 新增區塊：基本面與財務指標儀表板
+        # ==========================================
+        st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
+        
+        # 撈取 Yahoo 財經的基本面字典
+        info = ticker_data.info
+        
+        # 建立三個整齊的欄位
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        with col_f1:
+            st.markdown("##### 💰 獲利能力 (Profitability)")
+            st.metric("毛利率 (Gross Margin)", fmt_pct(info.get('grossMargins')))
+            st.metric("營業利益率 (Operating Margin)", fmt_pct(info.get('operatingMargins')))
+            st.metric("稅後純益率 (Net Margin)", fmt_pct(info.get('profitMargins')))
+            st.metric("股東權益報酬率 (ROE)", fmt_pct(info.get('returnOnEquity')))
+            st.metric("資產報酬率 (ROA)", fmt_pct(info.get('returnOnAssets')))
+            st.metric("每股稅後盈餘 (EPS)", fmt_val(info.get('trailingEps')))
+            
+        with col_f2:
+            st.markdown("##### 🚀 成長性 (Growth - YoY)")
+            st.metric("營收成長率 (季對季YoY)", fmt_pct(info.get('revenueGrowth')))
+            st.metric("稅後淨利成長率 (季對季YoY)", fmt_pct(info.get('earningsGrowth')))
+            st.markdown("*(註：國際資料庫無提供台股獨有之「月營收 MoM」數據，此處為季度比較。)*")
+            
+        with col_f3:
+            st.markdown("##### ⚖️ 估值與其他")
+            st.metric("本益比 (P/E Ratio)", fmt_val(info.get('trailingPE')))
+            st.metric("股價淨值比 (P/B Ratio)", fmt_val(info.get('priceToBook')))
+            st.metric("現金殖利率 (Dividend Yield)", fmt_pct(info.get('dividendYield')))
+            st.metric("市值 (Market Cap)", f"{info.get('marketCap', 0) / 100000000:.2f} 億" if info.get('marketCap') else "無資料")
+
+        st.divider()
+        
+        # ==========================================
+        # 📊 原有的專業技術線圖區塊
+        # ==========================================
         st.subheader(f"📊 **{display_name}** - 專業技術線圖")
         
         col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
@@ -111,7 +161,6 @@ with tab1:
             
         show_pe_river = st.checkbox("🌊 疊加本益比河流圖 (僅適用有獲利之個股)", value=False)
         
-        ticker_data = yf.Ticker(ticker_symbol)
         df_raw = ticker_data.history(period="10y")
         
         if not df_raw.empty:
@@ -149,8 +198,6 @@ with tab1:
             display_bars = 150 if tf_option != "年線" else len(df)
             df_plot = df.tail(display_bars)
             
-            latest_price = df_plot['Close'].iloc[-1]
-            
             rows = 1 + len(selected_inds)
             if rows == 1:
                 row_heights = [1.0]
@@ -169,7 +216,7 @@ with tab1:
 
             if show_pe_river:
                 try:
-                    eps = ticker_data.info.get('trailingEps', 0)
+                    eps = info.get('trailingEps', 0)
                     if eps and eps > 0:
                         pe_ratios = [10, 12, 15, 18, 20, 25]
                         river_colors = ['#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594']
@@ -206,20 +253,11 @@ with tab1:
             fig.update_layout(
                 xaxis_rangeslider_visible=False, 
                 height=400 + 150 * len(selected_inds),
-                # 🌟 升級 1：把天花板(t)從 30 挑高到 80，給圖例空間
                 margin=dict(l=10, r=10, t=80, b=10),
-                legend=dict(
-                    orientation="h", 
-                    yanchor="bottom", 
-                    y=1.01,         # 放在圖表頂部的邊緣
-                    xanchor="left", # 統一靠左對齊
-                    x=0.01
-                ),
-                # 🌟 升級 2(a)：把預設的拖曳行為設定為平移 (Pan)，取代原本惱人的框選放大
+                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01),
                 dragmode='pan' 
             )
             
-            # 🌟 升級 2(b)：注入這行 config 設定，強制解鎖兩指雙縮放(Pinch-to-zoom)的超棒手感
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
             
         else:
