@@ -4,14 +4,43 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.momentum import RSIIndicator, StochasticOscillator
-import twstock  # 🌟 新增：專門處理台股中文名稱的神器
+import twstock
 
 st.set_page_config(page_title="我的終極選股 APP", layout="wide")
-st.title("🚀 專屬股市分析與資產追蹤")
 
 # ==========================================
-# --- 你的 Google 試算表 CSV 專屬網址 ---
+# 🔒 隱私防護系統：請在這裡設定你的專屬密碼
 # ==========================================
+APP_PASSWORD = "8888" 
+
+# 檢查使用者是否已經登入
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+# 如果還沒登入，就顯示輸入密碼的畫面
+if not st.session_state["authenticated"]:
+    st.title("🔒 專屬系統已上鎖")
+    st.info("此為私人財務追蹤系統，請輸入密碼以進行解鎖。")
+    
+    # type="password" 會讓輸入的字變成黑點，保護隱私
+    pwd_input = st.text_input("🔑 請輸入密碼：", type="password")
+    
+    if st.button("解鎖登入"):
+        if pwd_input == APP_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun() # 密碼正確，重新載入頁面
+        else:
+            st.error("❌ 密碼錯誤，請重新輸入。")
+            
+    # st.stop() 非常重要！這會阻止系統繼續往下執行，保護底下的資料不被偷看
+    st.stop() 
+
+# ==========================================
+# 🔓 以下為密碼正確後，才會顯示的正式內容
+# ==========================================
+st.title("🚀 專屬股市分析與資產追蹤")
+
+# 你的 Google 試算表 CSV 專屬網址
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748KJh4hkU3KB26odS4uTfP7AZQgNcR0zvQVvjjYOfIvku-5vi8FcyW2BxNBDtq/pub?output=csv"
 
 # 建立自動讀取試算表的函數 (設定快取，每 60 秒更新一次)
@@ -23,14 +52,12 @@ def load_portfolio(url):
         for index, row in df.iterrows():
             if pd.notna(row['代號']):
                 symbol = str(row['代號']).strip()
-                # 萃取純數字代號 (例如 '2330.TW' 變成 '2330')
                 pure_code = symbol.split('.')[0]
                 
-                # 🌟 透過 twstock 查詢正統中文名稱
+                # 透過 twstock 查詢正統中文名稱
                 if pure_code in twstock.codes:
                     stock_name = twstock.codes[pure_code].name
                 else:
-                    # 如果真的查不到，才回去抓試算表裡的英文名
                     stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else "未知"
                     
                 portfolio[symbol] = {
@@ -53,7 +80,6 @@ tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 # 分頁 1：個股技術分析與警示
 # ----------------------------------------
 with tab1:
-    # 自訂下拉選單的顯示格式 (代號 + 中文名稱)
     def display_stock(symbol):
         if symbol in MY_PORTFOLIO and MY_PORTFOLIO[symbol]['name']:
             return f"{symbol} ({MY_PORTFOLIO[symbol]['name']})"
@@ -65,7 +91,6 @@ with tab1:
     if selected_option == "手動輸入其他代號...":
         ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
         pure_code = ticker_symbol.split('.')[0]
-        # 🌟 手動輸入也能自動翻譯中文名
         if pure_code in twstock.codes:
             display_name = f"{ticker_symbol} ({twstock.codes[pure_code].name})"
         else:
@@ -147,20 +172,18 @@ with tab2:
                 shares = info['shares']
                 stock_name = info['name']
                 
-                # 原始買賣金額
                 stock_cost_raw = cost * shares
                 stock_value_raw = current_price * shares
                 
-                # --- 專業版稅費計算 ---
                 discount = 0.6
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
                 
                 if symbol.startswith("00"):
-                    tax = stock_value_raw * 0.001  # ETF
+                    tax = stock_value_raw * 0.001
                     type_label = "ETF"
                 else:
-                    tax = stock_value_raw * 0.003  # 個股
+                    tax = stock_value_raw * 0.003
                     type_label = "個股"
                 
                 true_stock_cost = stock_cost_raw + buy_fee
