@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.momentum import RSIIndicator, StochasticOscillator
+from ta.trend import MACD  # 🌟 新增 MACD 模組
 import twstock
 
 # 把網頁標籤也改成帥順的專屬名稱
@@ -14,15 +15,8 @@ st.set_page_config(page_title="帥順股市分析與資產管理神器", layout=
 # ==========================================
 st.markdown("""
 <style>
-/* 讓表格寬度隨內容自動調整，消除多餘空白 */
-[data-testid="stTable"] table {
-    width: max-content !important;
-}
-/* 讓表格統一靠左對齊，閱讀動線更滑順 */
-[data-testid="stTable"] {
-    display: flex;
-    justify-content: flex-start;
-}
+[data-testid="stTable"] table { width: max-content !important; }
+[data-testid="stTable"] { display: flex; justify-content: flex-start; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -73,7 +67,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與警示
+# 分頁 1：個股技術分析與警示 (🌟 史詩級大升級)
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -84,65 +78,152 @@ with tab1:
             return f"{symbol} ({symbol_name_map[symbol]})"
         return symbol
 
-    stock_options = unique_symbols + ["手動輸入其他代號..."]
-    selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options, format_func=display_stock)
+    col_search, col_space = st.columns([1, 2])
+    with col_search:
+        stock_options = unique_symbols + ["手動輸入其他代號..."]
+        selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options, format_func=display_stock)
 
-    if selected_option == "手動輸入其他代號...":
-        ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
-        pure_code = ticker_symbol.split('.')[0]
-        if pure_code in twstock.codes:
-            display_name = f"{ticker_symbol} ({twstock.codes[pure_code].name})"
-        else:
-            display_name = ticker_symbol
-    else:
-        ticker_symbol = selected_option
-        display_name = display_stock(ticker_symbol)
-
-    if ticker_symbol:
-        st.subheader(f"正在分析： **{display_name}**")
-        
-        ticker_data = yf.Ticker(ticker_symbol)
-        df = ticker_data.history(period="1y")
-        
-        if not df.empty:
-            df['MA5'] = df['Close'].rolling(window=5).mean()
-            df['MA20'] = df['Close'].rolling(window=20).mean()
-            df['MA60'] = df['Close'].rolling(window=60).mean()
-            
-            kd = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=9, smooth_window=3)
-            df['K'] = kd.stoch()
-            
-            latest_price = df['Close'].iloc[-1]
-            ma20 = df['MA20'].iloc[-1]
-            kd_k = df['K'].iloc[-1]
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("最新收盤價", f"{latest_price:.2f}")
-            
-            ma_diff = latest_price - ma20
-            col2.metric("月線多空乖離", f"{ma20:.2f}", f"{ma_diff:.2f}", delta_color="inverse")
-                
-            if kd_k > 80:
-                col3.warning(f"⚠️ KD過熱 (K值: {kd_k:.1f})")
-            elif kd_k < 20:
-                col3.info(f"💡 KD超賣 (K值: {kd_k:.1f})")
+        if selected_option == "手動輸入其他代號...":
+            ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "2330.TW")
+            pure_code = ticker_symbol.split('.')[0]
+            if pure_code in twstock.codes:
+                display_name = f"{ticker_symbol} ({twstock.codes[pure_code].name})"
             else:
-                col3.metric("KD - K值", f"{kd_k:.1f}")
+                display_name = ticker_symbol
+        else:
+            ticker_symbol = selected_option
+            display_name = display_stock(ticker_symbol)
 
-            df_plot = df.tail(120)
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+    st.markdown("---")
+    
+    if ticker_symbol:
+        st.subheader(f"📊 **{display_name}** - 專業技術線圖")
+        
+        # 🌟 升級 1 & 2：建立超強大的參數控制面板
+        col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+        with col_ctrl1:
+            tf_option = st.radio("⏳ K線週期", ["日線", "週線", "月線", "年線"], horizontal=True)
+        with col_ctrl2:
+            ma_options = ["5", "10", "20", "30", "60", "120", "240"]
+            selected_mas = st.multiselect("📈 顯示均線 (可複選)", ma_options, default=["5", "20", "60"])
+        with col_ctrl3:
+            ind_options = ["成交量", "KD", "MACD", "RSI"]
+            selected_inds = st.multiselect("📉 附圖指標 (可複選)", ind_options, default=["成交量", "KD", "MACD"])
             
+        show_pe_river = st.checkbox("🌊 疊加本益比河流圖 (僅適用有獲利之個股)", value=False)
+        
+        # 撈取長達 10 年的資料以確保長天期均線 (如 240ma) 算得出來
+        ticker_data = yf.Ticker(ticker_symbol)
+        df_raw = ticker_data.history(period="10y")
+        
+        if not df_raw.empty:
+            # 移除時區資訊，避免 pandas 轉換週期時報錯
+            df_raw.index = df_raw.index.tz_localize(None)
+            
+            # 🌟 升級 2：根據選擇的週期重新取樣 (Resample)
+            if tf_option == "日線":
+                df = df_raw.copy()
+            elif tf_option == "週線":
+                df = df_raw.resample('W-FRI').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+            elif tf_option == "月線":
+                df = df_raw.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+            elif tf_option == "年線":
+                df = df_raw.resample('YE').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+
+            # 🌟 升級 1：動態計算勾選的均線
+            ma_colors = ['#FFA500', '#FF1493', '#00BFFF', '#9932CC', '#32CD32', '#FF0000', '#0000FF']
+            ma_lines = {}
+            for i, ma_str in enumerate(selected_mas):
+                ma_val = int(ma_str)
+                df[f'MA{ma_val}'] = df['Close'].rolling(window=ma_val).mean()
+                ma_lines[f'MA{ma_val}'] = ma_colors[i % len(ma_colors)]
+
+            # 🌟 升級 3：動態計算技術指標
+            if "KD" in selected_inds:
+                kd = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=9, smooth_window=3)
+                df['K'] = kd.stoch()
+                df['D'] = kd.stoch_signal()
+            if "MACD" in selected_inds:
+                macd = MACD(close=df['Close'], window_slow=26, window_fast=12, window_sign=9)
+                df['MACD'] = macd.macd()
+                df['MACD_signal'] = macd.macd_signal()
+                df['MACD_hist'] = macd.macd_diff()
+            if "RSI" in selected_inds:
+                rsi = RSIIndicator(close=df['Close'], window=14)
+                df['RSI'] = rsi.rsi()
+
+            # 裁切顯示區間 (避免畫面塞入 10 年的 K 棒變成一條線)
+            display_bars = 150 if tf_option != "年線" else len(df)
+            df_plot = df.tail(display_bars)
+            
+            # 計算最新行情報價
+            latest_price = df_plot['Close'].iloc[-1]
+            
+            # 動態分配圖表高度與子圖列數
+            rows = 1 + len(selected_inds)
+            if rows == 1:
+                row_heights = [1.0]
+            else:
+                row_heights = [0.5] + [0.5 / len(selected_inds)] * len(selected_inds)
+                
+            fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
+            
+            # 繪製主圖 K 線
             fig.add_trace(go.Candlestick(
                 x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'],
-                increasing_line_color='red', decreasing_line_color='green', name='K線'
+                increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA20'], line=dict(color='orange', width=1.5), name='20日線(月)'), row=1, col=1)
             
-            colors = ['red' if row['Close'] >= row['Open'] else 'green' for index, row in df_plot.iterrows()]
-            fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=colors, name='成交量'), row=2, col=1)
-            
-            fig.update_layout(title="技術分析圖表 (可滑動縮放)", xaxis_rangeslider_visible=False, height=500)
+            # 繪製主圖均線
+            for ma_col, color in ma_lines.items():
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
+
+            # 🌟 升級 4：本益比河流圖
+            if show_pe_river:
+                try:
+                    eps = ticker_data.info.get('trailingEps', 0)
+                    if eps and eps > 0:
+                        pe_ratios = [10, 12, 15, 18, 20, 25]
+                        river_colors = ['#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594']
+                        for pe, color in zip(pe_ratios, river_colors):
+                            fig.add_trace(go.Scatter(
+                                x=df_plot.index, y=[eps * pe]*len(df_plot), 
+                                name=f"{pe}X 本益比", line=dict(color=color, dash='dot', width=1.5)
+                            ), row=1, col=1)
+                    else:
+                        st.warning("⚠️ Yahoo財經查無此股票之有效 EPS 資料，無法繪製本益比河流圖。")
+                except:
+                    pass
+
+            # 繪製附圖指標
+            current_row = 2
+            for ind in selected_inds:
+                if ind == "成交量":
+                    vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
+                    fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
+                elif ind == "KD":
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
+                elif ind == "MACD":
+                    macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
+                    fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='柱狀體'), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='MACD', line=dict(color='#00BFFF')), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='Signal', line=dict(color='#FFA500')), row=current_row, col=1)
+                elif ind == "RSI":
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
+                
+                current_row += 1
+                
+            fig.update_layout(
+                xaxis_rangeslider_visible=False, 
+                height=400 + 150 * len(selected_inds), # 依據附圖數量自動拉長畫布
+                margin=dict(l=0, r=0, t=30, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
             st.plotly_chart(fig, use_container_width=True)
+            
         else:
             st.error("找不到該股票資料，可能是代號錯誤或系統連線異常。")
 
@@ -237,8 +318,6 @@ with tab2:
                 display_list.append(display_item)
                 
             df_portfolio = pd.DataFrame(display_list)
-            
-            # 強迫將 DataFrame 的預設索引加 1，變成正常的 (1, 2, 3...)
             df_portfolio.index = df_portfolio.index + 1
             
             styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
