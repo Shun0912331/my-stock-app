@@ -9,18 +9,18 @@ st.set_page_config(page_title="我的終極選股 APP", layout="wide")
 st.title("🚀 專屬股市分析與資產追蹤")
 
 # ==========================================
-# --- 這裡貼上你的 Google 試算表 CSV 網址 ---
+# --- 你的 Google 試算表 CSV 專屬網址 ---
 # ==========================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748KJh4hkU3KB26odS4uTfP7AZQgNcR0zvQVvjjYOfIvku-5vi8FcyW2BxNBDtq/pub?output=csv"
 
-# 建立自動讀取試算表的函數 (設定快取，每 60 秒更新一次，避免抓取太頻繁)
+# 建立自動讀取試算表的函數 (設定快取，每 60 秒更新一次)
 @st.cache_data(ttl=60)
 def load_portfolio(url):
     try:
         df = pd.read_csv(url)
         portfolio = {}
         for index, row in df.iterrows():
-            # 確保有資料才加入
+            # 確保有資料才加入，並對應 A, B, C 欄的標題 '代號', '成本', '股數'
             if pd.notna(row['代號']):
                 portfolio[str(row['代號']).strip()] = {'cost': float(row['成本']), 'shares': int(row['股數'])}
         return portfolio
@@ -29,11 +29,7 @@ def load_portfolio(url):
         return {}
 
 # 讀取持股資料
-if SHEET_URL != "請把你的CSV網址貼在這裡，記得保留前後的雙引號":
-    MY_PORTFOLIO = load_portfolio(SHEET_URL)
-else:
-    MY_PORTFOLIO = {}
-    st.warning("⚠️ 請先在程式碼的 SHEET_URL 貼上你的 Google 試算表網址！")
+MY_PORTFOLIO = load_portfolio(SHEET_URL)
 
 # 建立兩個分頁
 tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
@@ -103,7 +99,7 @@ with tab1:
 # 分頁 2：我的投資組合 (損益追蹤)
 # ----------------------------------------
 with tab2:
-    st.subheader("💼 持股即時損益狀態 (與試算表同步)")
+    st.subheader("💼 持股即時淨損益狀態 (已扣除稅費)")
     
     if MY_PORTFOLIO:
         portfolio_data = []
@@ -122,42 +118,59 @@ with tab2:
                 cost = info['cost']
                 shares = info['shares']
                 
-                stock_cost = cost * shares
-                stock_value = current_price * shares
-                profit = stock_value - stock_cost
-                roi = (profit / stock_cost) * 100 if stock_cost > 0 else 0
+                # 原始買賣金額
+                stock_cost_raw = cost * shares
+                stock_value_raw = current_price * shares
                 
-                total_cost += stock_cost
-                total_value += stock_value
+                # --- 專業版稅費計算 (假設手續費 6 折，可自行修改 discount) ---
+                discount = 0.6
+                buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
+                sell_fee = max(20, stock_value_raw * 0.001425 * discount)
+                tax = stock_value_raw * 0.003
+                
+                # 真實總成本 = 買進金額 + 買進手續費
+                true_stock_cost = stock_cost_raw + buy_fee
+                # 真實淨損益 = 賣出金額 - 買進金額 - 所有稅與手續費
+                true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
+                # 真實報酬率
+                roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
+                
+                total_cost += true_stock_cost
+                total_value += stock_value_raw
                 
                 portfolio_data.append({
                     "股票代號": symbol,
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
-                    "總成本": stock_cost,
-                    "目前市值": round(stock_value, 2),
-                    "未實現損益": round(profit, 0),
+                    "總成本(含息)": true_stock_cost,
+                    "目前市值": round(stock_value_raw, 2),
+                    "淨損益": round(true_profit, 0),
                     "報酬率 (%)": round(roi, 2)
                 })
             my_bar.progress((i + 1) / len(items), text="正在為您結算持股最新報價...")
             
         my_bar.empty()
         
-        total_profit = total_value - total_cost
+        # 精準計算整體投資組合的總淨損益
+        total_profit = sum([p["淨損益"] for p in portfolio_data])
         total_roi = (total_profit / total_cost) * 100 if total_cost > 0 else 0
         
         col1, col2, col3 = st.columns(3)
-        col1.metric("投資總成本", f"${total_cost:,.0f}")
+        col1.metric("投資總成本 (含手續費)", f"${total_cost:,.0f}")
         col2.metric("目前總市值", f"${total_value:,.0f}")
-        col3.metric("總未實現損益", f"${total_profit:,.0f}", f"{total_roi:.2f}%")
+        col3.metric("總未實現淨利", f"${total_profit:,.0f}", f"{total_roi:.2f}%")
         
         df_portfolio = pd.DataFrame(portfolio_data)
         st.dataframe(df_portfolio.style.format({
             "持股數": "{:,.0f}",
-            "總成本": "${:,.0f}",
+            "平均成本": "{:.2f}",
+            "最新股價": "{:.2f}",
+            "總成本(含息)": "${:,.0f}",
             "目前市值": "${:,.0f}",
-            "未實現損益": "${:,.0f}"
+            "淨損益": "${:,.0f}"
         }), use_container_width=True)
         
         st.caption("💡 想要修改持股？請直接在手機上開啟您的 Google 試算表更新資料，APP 會在 60 秒內自動同步。")
+    else:
+        st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
