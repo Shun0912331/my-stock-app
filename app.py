@@ -108,11 +108,9 @@ with tab1:
         ticker_data = yf.Ticker(ticker_symbol)
         
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
-        
         info = ticker_data.info
         
         col_f1, col_f2, col_f3 = st.columns(3)
-        
         with col_f1:
             st.markdown("##### 💰 獲利能力 (Profitability)")
             st.metric("毛利率 (Gross Margin)", fmt_pct(info.get('grossMargins')))
@@ -142,15 +140,16 @@ with tab1:
         col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
         with col_ctrl1:
             tf_option = st.radio("⏳ K線週期", ["日線", "週線", "月線", "年線"], horizontal=True)
+            show_pe_river = st.checkbox("🌊 疊加本益比河流圖", value=False)
         with col_ctrl2:
             ma_options = ["5", "10", "20", "30", "60", "120", "240"]
             selected_mas = st.multiselect("📈 顯示均線 (可複選)", ma_options, default=["5", "20", "60"])
+            # 🌟 新增：黃金交叉/死亡交叉開關
+            show_cross = st.checkbox("✨ 自動偵測 5日/20日 交叉訊號", value=True) 
         with col_ctrl3:
             ind_options = ["成交量", "KD", "MACD", "RSI"]
             selected_inds = st.multiselect("📉 附圖指標 (可複選)", ind_options, default=["成交量", "KD", "MACD"])
             
-        show_pe_river = st.checkbox("🌊 疊加本益比河流圖 (僅適用有獲利之個股)", value=False)
-        
         df_raw = ticker_data.history(period="10y")
         
         if not df_raw.empty:
@@ -171,6 +170,18 @@ with tab1:
                 ma_val = int(ma_str)
                 df[f'MA{ma_val}'] = df['Close'].rolling(window=ma_val).mean()
                 ma_lines[f'MA{ma_val}'] = ma_colors[i % len(ma_colors)]
+
+            # 🌟 運算黃金交叉與死亡交叉的數學邏輯
+            if show_cross:
+                if 'MA5' not in df.columns:
+                    df['MA5'] = df['Close'].rolling(window=5).mean()
+                if 'MA20' not in df.columns:
+                    df['MA20'] = df['Close'].rolling(window=20).mean()
+                
+                # 黃金交叉：今天的 5MA 大於 20MA，且昨天的 5MA 小於等於昨天的 20MA
+                df['Golden_Cross'] = (df['MA5'] > df['MA20']) & (df['MA5'].shift(1) <= df['MA20'].shift(1))
+                # 死亡交叉：今天的 5MA 小於 20MA，且昨天的 5MA 大於等於昨天的 20MA
+                df['Death_Cross'] = (df['MA5'] < df['MA20']) & (df['MA5'].shift(1) >= df['MA20'].shift(1))
 
             if "KD" in selected_inds:
                 kd = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=9, smooth_window=3)
@@ -196,17 +207,37 @@ with tab1:
                 
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
-            # 繪製主圖 K 線
             fig.add_trace(go.Candlestick(
                 x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'],
                 increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
             
-            # 🌟 限制主圖 K 線不能拉到負數
             fig.update_yaxes(rangemode='nonnegative', row=1, col=1)
             
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
+
+            # 🌟 把算好的黃金/死亡交叉畫到主圖表上
+            if show_cross:
+                golden_mask = df_plot['Golden_Cross'] == True
+                if golden_mask.any():
+                    fig.add_trace(go.Scatter(
+                        x=df_plot[golden_mask].index, 
+                        y=df_plot[golden_mask]['Low'] * 0.98, # 畫在最低價的下方一點點
+                        mode='markers', 
+                        marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')),
+                        name='黃金交叉 (5上穿20)'
+                    ), row=1, col=1)
+                    
+                death_mask = df_plot['Death_Cross'] == True
+                if death_mask.any():
+                    fig.add_trace(go.Scatter(
+                        x=df_plot[death_mask].index, 
+                        y=df_plot[death_mask]['High'] * 1.02, # 畫在最高價的上方一點點
+                        mode='markers', 
+                        marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')),
+                        name='死亡交叉 (5下穿20)'
+                    ), row=1, col=1)
 
             if show_pe_river:
                 try:
@@ -227,13 +258,11 @@ with tab1:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
-                    # 🌟 限制成交量圖表絕對不能小於 0
                     fig.update_yaxes(rangemode='nonnegative', row=current_row, col=1)
                     
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
-                    # 🌟 鎖定 KD 值只能在 0~100，並且禁止上下滑動縮放
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "MACD":
@@ -241,13 +270,11 @@ with tab1:
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='柱狀體'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='MACD', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='Signal', line=dict(color='#FFA500')), row=current_row, col=1)
-                    # MACD 需要負值，因此不做限制
                     
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
-                    # 🌟 鎖定 RSI 值只能在 0~100，並且禁止上下滑動縮放
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                 
                 current_row += 1
