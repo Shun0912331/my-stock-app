@@ -158,7 +158,6 @@ with tab2:
         portfolio_data = []
         my_bar = st.progress(0, text="正在為您結算持股最新報價...")
         
-        # 1. 先把所有股票的報價與淨利計算好
         for i, info in enumerate(MY_PORTFOLIO):
             symbol = info['symbol']
             cost = info['cost']
@@ -191,7 +190,7 @@ with tab2:
                 roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
                 
                 portfolio_data.append({
-                    "category": category, # 隱藏欄位，用來分組
+                    "category": category, 
                     "股票名稱": stock_name,
                     "股票代號": f"{symbol} ({type_label})",
                     "持股數": shares,
@@ -200,14 +199,12 @@ with tab2:
                     "總成本(含息)": true_stock_cost,
                     "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0),
-                    # 🌟 這裡把計算結果四捨五入到第 1 位
                     "報酬率 (%)": round(roi, 1) 
                 })
             my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
             
         my_bar.empty()
         
-        # 2. 將資料依照「分類」打包成分組
         grouped_data = {}
         for p in portfolio_data:
             cat = p["category"]
@@ -215,7 +212,6 @@ with tab2:
                 grouped_data[cat] = []
             grouped_data[cat].append(p)
             
-        # 3. 排序機制：確保 "本人" 或 "帥順" 永遠排在第一個
         def sort_key(cat):
             if cat in ["本人", "帥順"]: 
                 return 0
@@ -223,7 +219,6 @@ with tab2:
             
         sorted_categories = sorted(grouped_data.keys(), key=sort_key)
         
-        # 4. 針對每個人，獨立畫出專屬的儀表板與表格
         for cat in sorted_categories:
             cat_records = grouped_data[cat]
             
@@ -237,8 +232,6 @@ with tab2:
             col1, col2, col3 = st.columns(3)
             col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
             col2.metric("目前總市值", f"${cat_total_value:,.0f}")
-            
-            # 🌟 儀表板：從 .2f 改成 .1f，顯示小數點第 1 位
             col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%")
             
             display_list = []
@@ -249,8 +242,8 @@ with tab2:
                 
             df_portfolio = pd.DataFrame(display_list)
             
-            # 🌟 表格格式化：強制規定報酬率欄位只顯示到小數點第 1 位
-            st.dataframe(df_portfolio.style.format({
+            # 🌟 升級 1：使用 st.table 取代 st.dataframe，表格全數展開無卷軸！
+            st.table(df_portfolio.style.format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
                 "最新股價": "{:.2f}",
@@ -258,10 +251,20 @@ with tab2:
                 "目前市值": "${:,.0f}",
                 "淨損益": "${:,.0f}",
                 "報酬率 (%)": "{:.1f}"  
-            }), use_container_width=True)
+            }))
+            
+            # 🌟 升級 2：為每個人產生專屬的 CSV 下載按鈕 (加上 utf-8-sig 讓 Excel 讀得懂中文)
+            csv = df_portfolio.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label=f"📥 下載【{cat}】持股明細 (CSV/Excel)",
+                data=csv,
+                file_name=f"{cat}_的持股明細.csv",
+                mime="text/csv",
+                key=f"download_{cat}" # 確保每個按鈕有獨立 ID
+            )
             
             st.divider() 
             
-        st.caption("💡 想要修改持股？請直接在手機上開啟您的 Google 試算表更新資料，APP 會在 60 秒內自動同步。")
+        st.caption("💡 想要把完整畫面匯出 PDF？直接使用瀏覽器的「列印 ➔ 另存為 PDF」功能，排版最完美！")
     else:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
