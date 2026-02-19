@@ -10,7 +10,7 @@ import twstock
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
 # ==========================================
-# 🎨 專屬介面優化：自適應表格寬度與隱藏編號
+# 🎨 專屬介面優化：自適應表格寬度
 # ==========================================
 st.markdown("""
 <style>
@@ -215,7 +215,7 @@ with tab2:
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
-                    "總成本": true_stock_cost,       # 🌟 修改點：移除(含息)字眼
+                    "總成本": true_stock_cost,       
                     "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0),
                     "報酬率 (%)": round(roi, 1) 
@@ -241,7 +241,6 @@ with tab2:
         for cat in sorted_categories:
             cat_records = grouped_data[cat]
             
-            # 🌟 修改點：對應上面更改的字典名稱
             cat_total_cost = sum([p["總成本"] for p in cat_records])
             cat_total_value = sum([p["目前市值"] for p in cat_records])
             cat_total_profit = sum([p["淨損益"] for p in cat_records])
@@ -262,8 +261,11 @@ with tab2:
                 
             df_portfolio = pd.DataFrame(display_list)
             
-            # 🌟 升級點：使用 .hide(axis="index") 隱藏最左側 0,1,2 編號，並對應「總成本」欄位
-            styled_table = df_portfolio.style.hide(axis="index").apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
+            # 🌟 升級點：強迫將 DataFrame 的預設索引 (0, 1, 2...) 全部加 1，變成正常的 (1, 2, 3...)
+            df_portfolio.index = df_portfolio.index + 1
+            
+            # 將上色的 CSS 套用上去
+            styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
                 "最新股價": "{:.2f}",
