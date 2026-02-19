@@ -26,12 +26,10 @@ def color_tw_col(s):
             else 'color: #00D26A' if isinstance(v, (int, float)) and v < 0 
             else '' for v in s]
 
-# 格式化百分比的小工具
 def fmt_pct(val):
     if val is None or pd.isna(val): return "無資料"
     return f"{val * 100:.2f}%"
 
-# 格式化一般數字的小工具
 def fmt_val(val):
     if val is None or pd.isna(val): return "無資料"
     return f"{val:.2f}"
@@ -109,15 +107,10 @@ with tab1:
     if ticker_symbol:
         ticker_data = yf.Ticker(ticker_symbol)
         
-        # ==========================================
-        # 🌟 新增區塊：基本面與財務指標儀表板
-        # ==========================================
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
         
-        # 撈取 Yahoo 財經的基本面字典
         info = ticker_data.info
         
-        # 建立三個整齊的欄位
         col_f1, col_f2, col_f3 = st.columns(3)
         
         with col_f1:
@@ -144,9 +137,6 @@ with tab1:
 
         st.divider()
         
-        # ==========================================
-        # 📊 原有的專業技術線圖區塊
-        # ==========================================
         st.subheader(f"📊 **{display_name}** - 專業技術線圖")
         
         col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
@@ -206,10 +196,14 @@ with tab1:
                 
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
+            # 繪製主圖 K 線
             fig.add_trace(go.Candlestick(
                 x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'],
                 increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
+            
+            # 🌟 限制主圖 K 線不能拉到負數
+            fig.update_yaxes(rangemode='nonnegative', row=1, col=1)
             
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
@@ -225,8 +219,6 @@ with tab1:
                                 x=df_plot.index, y=[eps * pe]*len(df_plot), 
                                 name=f"{pe}X 本益比", line=dict(color=color, dash='dot', width=1.5)
                             ), row=1, col=1)
-                    else:
-                        st.warning("⚠️ Yahoo財經查無此股票之有效 EPS 資料，無法繪製本益比河流圖。")
                 except:
                     pass
 
@@ -235,18 +227,28 @@ with tab1:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
+                    # 🌟 限制成交量圖表絕對不能小於 0
+                    fig.update_yaxes(rangemode='nonnegative', row=current_row, col=1)
+                    
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
+                    # 🌟 鎖定 KD 值只能在 0~100，並且禁止上下滑動縮放
+                    fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
+                    
                 elif ind == "MACD":
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='柱狀體'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='MACD', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='Signal', line=dict(color='#FFA500')), row=current_row, col=1)
+                    # MACD 需要負值，因此不做限制
+                    
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
+                    # 🌟 鎖定 RSI 值只能在 0~100，並且禁止上下滑動縮放
+                    fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                 
                 current_row += 1
                 
