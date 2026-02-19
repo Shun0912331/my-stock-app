@@ -10,6 +10,29 @@ import twstock
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
 # ==========================================
+# 🎨 專屬介面優化：自適應表格寬度與隱藏編號
+# ==========================================
+st.markdown("""
+<style>
+/* 讓表格寬度隨內容自動調整，消除多餘空白 */
+[data-testid="stTable"] table {
+    width: max-content !important;
+}
+/* 讓表格統一靠左對齊，閱讀動線更滑順 */
+[data-testid="stTable"] {
+    display: flex;
+    justify-content: flex-start;
+}
+</style>
+""", unsafe_allow_html=True)
+
+def color_tw_col(s):
+    """將 DataFrame 直行套用台股紅綠色"""
+    return ['color: #FF4B4B' if isinstance(v, (int, float)) and v > 0 
+            else 'color: #00D26A' if isinstance(v, (int, float)) and v < 0 
+            else '' for v in s]
+
+# ==========================================
 # 🔒 隱私防護系統：請在這裡設定你的專屬密碼
 # ==========================================
 APP_PASSWORD = "8888" 
@@ -37,7 +60,6 @@ if not st.session_state["authenticated"]:
 # ==========================================
 st.title("🚀 帥順股市分析與資產管理神器")
 
-# 你的 Google 試算表 CSV 專屬網址
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748KJh4hkU3KB26odS4uTfP7AZQgNcR0zvQVvjjYOfIvku-5vi8FcyW2BxNBDtq/pub?output=csv"
 
 @st.cache_data(ttl=60)
@@ -55,7 +77,6 @@ def load_portfolio(url):
                 else:
                     stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else "未知"
                 
-                # 讀取分類欄位，如果沒填寫就預設為 "本人"
                 category = str(row['分類']).strip() if '分類' in df.columns and pd.notna(row['分類']) else "本人"
                     
                 portfolio.append({
@@ -121,10 +142,8 @@ with tab1:
             col1, col2, col3 = st.columns(3)
             col1.metric("最新收盤價", f"{latest_price:.2f}")
             
-            if latest_price > ma20:
-                col2.success(f"🟢 多頭格局 (站上月線 {ma20:.2f})")
-            else:
-                col2.error(f"🔴 空頭警訊 (跌破月線 {ma20:.2f})")
+            ma_diff = latest_price - ma20
+            col2.metric("月線多空乖離", f"{ma20:.2f}", f"{ma_diff:.2f}", delta_color="inverse")
                 
             if kd_k > 80:
                 col3.warning(f"⚠️ KD過熱 (K值: {kd_k:.1f})")
@@ -196,7 +215,7 @@ with tab2:
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
-                    "總成本(含息)": true_stock_cost,
+                    "總成本": true_stock_cost,       # 🌟 修改點：移除(含息)字眼
                     "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0),
                     "報酬率 (%)": round(roi, 1) 
@@ -222,7 +241,8 @@ with tab2:
         for cat in sorted_categories:
             cat_records = grouped_data[cat]
             
-            cat_total_cost = sum([p["總成本(含息)"] for p in cat_records])
+            # 🌟 修改點：對應上面更改的字典名稱
+            cat_total_cost = sum([p["總成本"] for p in cat_records])
             cat_total_value = sum([p["目前市值"] for p in cat_records])
             cat_total_profit = sum([p["淨損益"] for p in cat_records])
             cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
@@ -232,7 +252,7 @@ with tab2:
             col1, col2, col3 = st.columns(3)
             col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
             col2.metric("目前總市值", f"${cat_total_value:,.0f}")
-            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%")
+            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%", delta_color="inverse")
             
             display_list = []
             for p in cat_records:
@@ -242,25 +262,26 @@ with tab2:
                 
             df_portfolio = pd.DataFrame(display_list)
             
-            # 🌟 升級 1：使用 st.table 取代 st.dataframe，表格全數展開無卷軸！
-            st.table(df_portfolio.style.format({
+            # 🌟 升級點：使用 .hide(axis="index") 隱藏最左側 0,1,2 編號，並對應「總成本」欄位
+            styled_table = df_portfolio.style.hide(axis="index").apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
                 "最新股價": "{:.2f}",
-                "總成本(含息)": "${:,.0f}",
+                "總成本": "${:,.0f}",          
                 "目前市值": "${:,.0f}",
                 "淨損益": "${:,.0f}",
                 "報酬率 (%)": "{:.1f}"  
-            }))
+            })
             
-            # 🌟 升級 2：為每個人產生專屬的 CSV 下載按鈕 (加上 utf-8-sig 讓 Excel 讀得懂中文)
+            st.table(styled_table)
+            
             csv = df_portfolio.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label=f"📥 下載【{cat}】持股明細 (CSV/Excel)",
                 data=csv,
                 file_name=f"{cat}_的持股明細.csv",
                 mime="text/csv",
-                key=f"download_{cat}" # 確保每個按鈕有獨立 ID
+                key=f"download_{cat}" 
             )
             
             st.divider() 
