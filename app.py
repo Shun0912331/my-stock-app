@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.momentum import RSIIndicator, StochasticOscillator
+import twstock  # 🌟 新增：專門處理台股中文名稱的神器
 
 st.set_page_config(page_title="我的終極選股 APP", layout="wide")
 st.title("🚀 專屬股市分析與資產追蹤")
@@ -20,11 +21,18 @@ def load_portfolio(url):
         df = pd.read_csv(url)
         portfolio = {}
         for index, row in df.iterrows():
-            # 確保有資料才加入
             if pd.notna(row['代號']):
                 symbol = str(row['代號']).strip()
-                # 順便抓取 D 欄的股票名稱 (如果有填寫的話)
-                stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else ""
+                # 萃取純數字代號 (例如 '2330.TW' 變成 '2330')
+                pure_code = symbol.split('.')[0]
+                
+                # 🌟 透過 twstock 查詢正統中文名稱
+                if pure_code in twstock.codes:
+                    stock_name = twstock.codes[pure_code].name
+                else:
+                    # 如果真的查不到，才回去抓試算表裡的英文名
+                    stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else "未知"
+                    
                 portfolio[symbol] = {
                     'cost': float(row['成本']), 
                     'shares': int(row['股數']),
@@ -45,7 +53,7 @@ tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 # 分頁 1：個股技術分析與警示
 # ----------------------------------------
 with tab1:
-    # 自訂下拉選單的顯示格式 (代號 + 名稱)
+    # 自訂下拉選單的顯示格式 (代號 + 中文名稱)
     def display_stock(symbol):
         if symbol in MY_PORTFOLIO and MY_PORTFOLIO[symbol]['name']:
             return f"{symbol} ({MY_PORTFOLIO[symbol]['name']})"
@@ -56,7 +64,12 @@ with tab1:
 
     if selected_option == "手動輸入其他代號...":
         ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
-        display_name = ticker_symbol # 手動輸入暫時只顯示代號
+        pure_code = ticker_symbol.split('.')[0]
+        # 🌟 手動輸入也能自動翻譯中文名
+        if pure_code in twstock.codes:
+            display_name = f"{ticker_symbol} ({twstock.codes[pure_code].name})"
+        else:
+            display_name = ticker_symbol
     else:
         ticker_symbol = selected_option
         display_name = display_stock(ticker_symbol)
@@ -132,7 +145,7 @@ with tab2:
                 current_price = hist['Close'].iloc[-1]
                 cost = info['cost']
                 shares = info['shares']
-                stock_name = info['name'] if info['name'] else "未知"
+                stock_name = info['name']
                 
                 # 原始買賣金額
                 stock_cost_raw = cost * shares
@@ -143,19 +156,15 @@ with tab2:
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
                 
-                # 自動判斷是否為 ETF (代號以 00 開頭)
                 if symbol.startswith("00"):
-                    tax = stock_value_raw * 0.001  # ETF 證交稅 0.1%
+                    tax = stock_value_raw * 0.001  # ETF
                     type_label = "ETF"
                 else:
-                    tax = stock_value_raw * 0.003  # 個股證交稅 0.3%
+                    tax = stock_value_raw * 0.003  # 個股
                     type_label = "個股"
                 
-                # 真實總成本 = 買進金額 + 買進手續費
                 true_stock_cost = stock_cost_raw + buy_fee
-                # 真實淨損益 = 賣出金額 - 買進金額 - 所有稅與手續費
                 true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
-                # 真實報酬率
                 roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
                 
                 total_cost += true_stock_cost
@@ -176,7 +185,6 @@ with tab2:
             
         my_bar.empty()
         
-        # 精準計算整體投資組合的總淨損益
         total_profit = sum([p["淨損益"] for p in portfolio_data])
         total_roi = (total_profit / total_cost) * 100 if total_cost > 0 else 0
         
