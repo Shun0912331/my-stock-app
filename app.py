@@ -83,4 +83,25 @@ tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 # ----------------------------------------
 with tab1:
     def display_stock(symbol):
-        if symbol in MY_PORTFOLIO and MY
+        if symbol in MY_PORTFOLIO and MY_PORTFOLIO[symbol]['name']:
+            return f"{symbol} ({MY_PORTFOLIO[symbol]['name']})"
+        return symbol
+
+    stock_options = list(MY_PORTFOLIO.keys()) + ["手動輸入其他代號..."]
+    selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options, format_func=display_stock)
+
+    if selected_option == "手動輸入其他代號...":
+        ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
+        pure_code = ticker_symbol.split('.')[0]
+        if pure_code in twstock.codes:
+            display_name = f"{ticker_symbol} ({twstock.codes[pure_code].name})"
+        else:
+            display_name = ticker_symbol
+    else:
+        ticker_symbol = selected_option
+        display_name = display_stock(ticker_symbol)
+
+    if ticker_symbol:
+        st.subheader(f"正在分析： **{display_name}**")
+        ticker_data = yf.Ticker(ticker_symbol)
+        df = ticker_data.history(period="1y")
