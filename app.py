@@ -42,7 +42,8 @@ with tab1:
     selected_option = st.selectbox("請選擇要分析的自選股 (或選擇手動輸入)", stock_options)
 
     if selected_option == "手動輸入其他代號...":
-        ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW)", "2603.TW")
+        # 預設改成 00878.TW 讓你方便測試
+        ticker_symbol = st.text_input("請輸入股票代號 (台股請加 .TW 或 .TWO)", "00878.TW")
     else:
         ticker_symbol = selected_option
 
@@ -99,7 +100,7 @@ with tab1:
 # 分頁 2：我的投資組合 (損益追蹤)
 # ----------------------------------------
 with tab2:
-    st.subheader("💼 持股即時淨損益狀態 (已扣除稅費)")
+    st.subheader("💼 持股即時淨損益狀態 (已自動判斷 ETF 優惠稅率)")
     
     if MY_PORTFOLIO:
         portfolio_data = []
@@ -122,11 +123,18 @@ with tab2:
                 stock_cost_raw = cost * shares
                 stock_value_raw = current_price * shares
                 
-                # --- 專業版稅費計算 (假設手續費 6 折，可自行修改 discount) ---
+                # --- 專業版稅費計算 ---
                 discount = 0.6
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
-                tax = stock_value_raw * 0.003
+                
+                # 自動判斷是否為 ETF (代號以 00 開頭)
+                if symbol.startswith("00"):
+                    tax = stock_value_raw * 0.001  # ETF 證交稅 0.1%
+                    type_label = "ETF"
+                else:
+                    tax = stock_value_raw * 0.003  # 個股證交稅 0.3%
+                    type_label = "個股"
                 
                 # 真實總成本 = 買進金額 + 買進手續費
                 true_stock_cost = stock_cost_raw + buy_fee
@@ -139,7 +147,7 @@ with tab2:
                 total_value += stock_value_raw
                 
                 portfolio_data.append({
-                    "股票代號": symbol,
+                    "股票代號": f"{symbol} ({type_label})", # 這裡會標示是 ETF 還是個股
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
