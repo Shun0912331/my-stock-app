@@ -44,7 +44,7 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748
 def load_portfolio(url):
     try:
         df = pd.read_csv(url)
-        portfolio = [] # 🌟 升級為清單模式，這樣即使你跟爸爸買同一檔股票也不會被覆蓋
+        portfolio = [] 
         for index, row in df.iterrows():
             if pd.notna(row['代號']):
                 symbol = str(row['代號']).strip()
@@ -55,7 +55,7 @@ def load_portfolio(url):
                 else:
                     stock_name = str(row['股票名稱']).strip() if '股票名稱' in df.columns and pd.notna(row['股票名稱']) else "未知"
                 
-                # 🌟 讀取分類欄位，如果沒填寫就預設為 "本人"
+                # 讀取分類欄位，如果沒填寫就預設為 "本人"
                 category = str(row['分類']).strip() if '分類' in df.columns and pd.notna(row['分類']) else "本人"
                     
                 portfolio.append({
@@ -78,7 +78,6 @@ tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
 # 分頁 1：個股技術分析與警示
 # ----------------------------------------
 with tab1:
-    # 萃取不重複的股票代號供選單使用
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
     symbol_name_map = {p['symbol']: p['name'] for p in MY_PORTFOLIO}
 
@@ -155,88 +154,101 @@ with tab1:
 # 分頁 2：我的投資組合 (損益追蹤)
 # ----------------------------------------
 with tab2:
-    st.subheader("💼 持股即時淨損益狀態")
-    
     if MY_PORTFOLIO:
-        # 🌟 新增：找出所有的分類，並建立多重勾選清單
-        all_categories = list(set([p['category'] for p in MY_PORTFOLIO]))
-        selected_categories = st.multiselect(
-            "👥 請選擇要檢視的帳戶分類：", 
-            options=all_categories, 
-            default=all_categories # 預設全部勾選
-        )
+        portfolio_data = []
+        my_bar = st.progress(0, text="正在為您結算持股最新報價...")
         
-        # 根據勾選的結果過濾持股
-        filtered_portfolio = [p for p in MY_PORTFOLIO if p['category'] in selected_categories]
+        # 1. 先把所有股票的報價與淨利計算好
+        for i, info in enumerate(MY_PORTFOLIO):
+            symbol = info['symbol']
+            cost = info['cost']
+            shares = info['shares']
+            stock_name = info['name']
+            category = info['category']
+            
+            tick = yf.Ticker(symbol)
+            hist = tick.history(period="1d")
+            
+            if not hist.empty:
+                current_price = hist['Close'].iloc[-1]
+                
+                stock_cost_raw = cost * shares
+                stock_value_raw = current_price * shares
+                
+                discount = 0.6
+                buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
+                sell_fee = max(20, stock_value_raw * 0.001425 * discount)
+                
+                if symbol.startswith("00"):
+                    tax = stock_value_raw * 0.001
+                    type_label = "ETF"
+                else:
+                    tax = stock_value_raw * 0.003
+                    type_label = "個股"
+                
+                true_stock_cost = stock_cost_raw + buy_fee
+                true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
+                roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
+                
+                portfolio_data.append({
+                    "category": category, # 隱藏欄位，用來分組
+                    "股票名稱": stock_name,
+                    "股票代號": f"{symbol} ({type_label})",
+                    "持股數": shares,
+                    "平均成本": cost,
+                    "最新股價": round(current_price, 2),
+                    "總成本(含息)": true_stock_cost,
+                    "目前市值": round(stock_value_raw, 2),
+                    "淨損益": round(true_profit, 0),
+                    "報酬率 (%)": round(roi, 2)
+                })
+            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
+            
+        my_bar.empty()
         
-        if not filtered_portfolio:
-            st.warning("請至少選擇一個分類來顯示持股資料。")
-        else:
-            portfolio_data = []
-            total_cost = 0
-            total_value = 0
+        # 2. 將資料依照「分類」打包成分組
+        grouped_data = {}
+        for p in portfolio_data:
+            cat = p["category"]
+            if cat not in grouped_data:
+                grouped_data[cat] = []
+            grouped_data[cat].append(p)
             
-            my_bar = st.progress(0, text="正在為您結算持股最新報價...")
+        # 3. 排序機制：確保 "本人" 或 "帥順" 永遠排在第一個
+        def sort_key(cat):
+            if cat in ["本人", "帥順"]: 
+                return 0
+            return 1
             
-            for i, info in enumerate(filtered_portfolio):
-                symbol = info['symbol']
-                cost = info['cost']
-                shares = info['shares']
-                stock_name = info['name']
-                category = info['category']
-                
-                tick = yf.Ticker(symbol)
-                hist = tick.history(period="1d")
-                
-                if not hist.empty:
-                    current_price = hist['Close'].iloc[-1]
-                    
-                    stock_cost_raw = cost * shares
-                    stock_value_raw = current_price * shares
-                    
-                    discount = 0.6
-                    buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
-                    sell_fee = max(20, stock_value_raw * 0.001425 * discount)
-                    
-                    if symbol.startswith("00"):
-                        tax = stock_value_raw * 0.001
-                        type_label = "ETF"
-                    else:
-                        tax = stock_value_raw * 0.003
-                        type_label = "個股"
-                    
-                    true_stock_cost = stock_cost_raw + buy_fee
-                    true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
-                    roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
-                    
-                    total_cost += true_stock_cost
-                    total_value += stock_value_raw
-                    
-                    portfolio_data.append({
-                        "所有人": category,          # 🌟 在表格第一欄顯示所有人
-                        "股票名稱": stock_name,
-                        "股票代號": f"{symbol} ({type_label})",
-                        "持股數": shares,
-                        "平均成本": cost,
-                        "最新股價": round(current_price, 2),
-                        "總成本(含息)": true_stock_cost,
-                        "目前市值": round(stock_value_raw, 2),
-                        "淨損益": round(true_profit, 0),
-                        "報酬率 (%)": round(roi, 2)
-                    })
-                my_bar.progress((i + 1) / len(filtered_portfolio), text="正在為您結算持股最新報價...")
-                
-            my_bar.empty()
+        sorted_categories = sorted(grouped_data.keys(), key=sort_key)
+        
+        # 4. 針對每個人，獨立畫出專屬的儀表板與表格
+        for cat in sorted_categories:
+            cat_records = grouped_data[cat]
             
-            total_profit = sum([p["淨損益"] for p in portfolio_data])
-            total_roi = (total_profit / total_cost) * 100 if total_cost > 0 else 0
+            # 結算這個人的總資產
+            cat_total_cost = sum([p["總成本(含息)"] for p in cat_records])
+            cat_total_value = sum([p["目前市值"] for p in cat_records])
+            cat_total_profit = sum([p["淨損益"] for p in cat_records])
+            cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
             
+            # 專屬大標題
+            st.markdown(f"### 👤 【{cat}】的專屬資產")
+            
+            # 專屬儀表板
             col1, col2, col3 = st.columns(3)
-            col1.metric("顯示範圍內總成本", f"${total_cost:,.0f}")
-            col2.metric("顯示範圍內總市值", f"${total_value:,.0f}")
-            col3.metric("顯示範圍內總淨利", f"${total_profit:,.0f}", f"{total_roi:.2f}%")
+            col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
+            col2.metric("目前總市值", f"${cat_total_value:,.0f}")
+            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.2f}%")
             
-            df_portfolio = pd.DataFrame(portfolio_data)
+            # 準備專屬表格 (把原本用來分組的 category 隱藏起來，因為標題已經寫了是誰的)
+            display_list = []
+            for p in cat_records:
+                display_item = p.copy()
+                del display_item["category"]
+                display_list.append(display_item)
+                
+            df_portfolio = pd.DataFrame(display_list)
             st.dataframe(df_portfolio.style.format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
@@ -246,6 +258,9 @@ with tab2:
                 "淨損益": "${:,.0f}"
             }), use_container_width=True)
             
-            st.caption("💡 想要修改持股？請直接在手機上開啟您的 Google 試算表更新資料，APP 會在 60 秒內自動同步。")
+            # 畫一條分隔線，把不同人的區塊清楚切開
+            st.divider() 
+            
+        st.caption("💡 想要修改持股？請直接在手機上開啟您的 Google 試算表更新資料，APP 會在 60 秒內自動同步。")
     else:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
