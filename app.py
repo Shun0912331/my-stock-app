@@ -144,7 +144,6 @@ with tab1:
         with col_ctrl2:
             ma_options = ["5", "10", "20", "30", "60", "120", "240"]
             selected_mas = st.multiselect("📈 顯示均線 (可複選)", ma_options, default=["5", "20", "60"])
-            # 🌟 新增：黃金交叉/死亡交叉開關
             show_cross = st.checkbox("✨ 自動偵測 5日/20日 交叉訊號", value=True) 
         with col_ctrl3:
             ind_options = ["成交量", "KD", "MACD", "RSI"]
@@ -171,16 +170,13 @@ with tab1:
                 df[f'MA{ma_val}'] = df['Close'].rolling(window=ma_val).mean()
                 ma_lines[f'MA{ma_val}'] = ma_colors[i % len(ma_colors)]
 
-            # 🌟 運算黃金交叉與死亡交叉的數學邏輯
             if show_cross:
                 if 'MA5' not in df.columns:
                     df['MA5'] = df['Close'].rolling(window=5).mean()
                 if 'MA20' not in df.columns:
                     df['MA20'] = df['Close'].rolling(window=20).mean()
                 
-                # 黃金交叉：今天的 5MA 大於 20MA，且昨天的 5MA 小於等於昨天的 20MA
                 df['Golden_Cross'] = (df['MA5'] > df['MA20']) & (df['MA5'].shift(1) <= df['MA20'].shift(1))
-                # 死亡交叉：今天的 5MA 小於 20MA，且昨天的 5MA 大於等於昨天的 20MA
                 df['Death_Cross'] = (df['MA5'] < df['MA20']) & (df['MA5'].shift(1) >= df['MA20'].shift(1))
 
             if "KD" in selected_inds:
@@ -217,25 +213,20 @@ with tab1:
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
 
-            # 🌟 把算好的黃金/死亡交叉畫到主圖表上
             if show_cross:
                 golden_mask = df_plot['Golden_Cross'] == True
                 if golden_mask.any():
                     fig.add_trace(go.Scatter(
-                        x=df_plot[golden_mask].index, 
-                        y=df_plot[golden_mask]['Low'] * 0.98, # 畫在最低價的下方一點點
-                        mode='markers', 
-                        marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')),
+                        x=df_plot[golden_mask].index, y=df_plot[golden_mask]['Low'] * 0.98,
+                        mode='markers', marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')),
                         name='黃金交叉 (5上穿20)'
                     ), row=1, col=1)
                     
                 death_mask = df_plot['Death_Cross'] == True
                 if death_mask.any():
                     fig.add_trace(go.Scatter(
-                        x=df_plot[death_mask].index, 
-                        y=df_plot[death_mask]['High'] * 1.02, # 畫在最高價的上方一點點
-                        mode='markers', 
-                        marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')),
+                        x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02,
+                        mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')),
                         name='死亡交叉 (5下穿20)'
                     ), row=1, col=1)
 
@@ -266,148 +257,13 @@ with tab1:
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "MACD":
+                    # 🌟 已經將不專業的名稱全部正名！
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
-                    fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='柱狀體'), row=current_row, col=1)
-                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='MACD', line=dict(color='#00BFFF')), row=current_row, col=1)
-                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='Signal', line=dict(color='#FFA500')), row=current_row, col=1)
+                    fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='OSC'), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='DIF', line=dict(color='#00BFFF')), row=current_row, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='MACD', line=dict(color='#FFA500')), row=current_row, col=1)
                     
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
-                    fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
-                    fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
-                
-                current_row += 1
-                
-            fig.update_layout(
-                xaxis_rangeslider_visible=False, 
-                height=400 + 150 * len(selected_inds),
-                margin=dict(l=10, r=10, t=80, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01),
-                dragmode='pan' 
-            )
-            
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
-            
-        else:
-            st.error("找不到該股票資料，可能是代號錯誤或系統連線異常。")
-
-# ----------------------------------------
-# 分頁 2：我的投資組合 (損益追蹤)
-# ----------------------------------------
-with tab2:
-    if MY_PORTFOLIO:
-        portfolio_data = []
-        my_bar = st.progress(0, text="正在為您結算持股最新報價...")
-        
-        for i, info in enumerate(MY_PORTFOLIO):
-            symbol = info['symbol']
-            cost = info['cost']
-            shares = info['shares']
-            stock_name = info['name']
-            category = info['category']
-            
-            tick = yf.Ticker(symbol)
-            hist = tick.history(period="1d")
-            
-            if not hist.empty:
-                current_price = hist['Close'].iloc[-1]
-                
-                stock_cost_raw = cost * shares
-                stock_value_raw = current_price * shares
-                
-                discount = 0.6
-                buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
-                sell_fee = max(20, stock_value_raw * 0.001425 * discount)
-                
-                if symbol.startswith("00"):
-                    tax = stock_value_raw * 0.001
-                    type_label = "ETF"
-                else:
-                    tax = stock_value_raw * 0.003
-                    type_label = "個股"
-                
-                true_stock_cost = stock_cost_raw + buy_fee
-                true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
-                roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
-                
-                portfolio_data.append({
-                    "category": category, 
-                    "股票名稱": stock_name,
-                    "股票代號": f"{symbol} ({type_label})",
-                    "持股數": shares,
-                    "平均成本": cost,
-                    "最新股價": round(current_price, 2),
-                    "總成本": true_stock_cost,       
-                    "目前市值": round(stock_value_raw, 2),
-                    "淨損益": round(true_profit, 0),
-                    "報酬率 (%)": round(roi, 1) 
-                })
-            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
-            
-        my_bar.empty()
-        
-        grouped_data = {}
-        for p in portfolio_data:
-            cat = p["category"]
-            if cat not in grouped_data:
-                grouped_data[cat] = []
-            grouped_data[cat].append(p)
-            
-        def sort_key(cat):
-            if cat in ["本人", "帥順"]: 
-                return 0
-            return 1
-            
-        sorted_categories = sorted(grouped_data.keys(), key=sort_key)
-        
-        for cat in sorted_categories:
-            cat_records = grouped_data[cat]
-            
-            cat_total_cost = sum([p["總成本"] for p in cat_records])
-            cat_total_value = sum([p["目前市值"] for p in cat_records])
-            cat_total_profit = sum([p["淨損益"] for p in cat_records])
-            cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
-            
-            st.markdown(f"### 👤 【{cat}】的專屬資產")
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
-            col2.metric("目前總市值", f"${cat_total_value:,.0f}")
-            col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%", delta_color="inverse")
-            
-            display_list = []
-            for p in cat_records:
-                display_item = p.copy()
-                del display_item["category"]
-                display_list.append(display_item)
-                
-            df_portfolio = pd.DataFrame(display_list)
-            df_portfolio.index = df_portfolio.index + 1
-            
-            styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
-                "持股數": "{:,.0f}",
-                "平均成本": "{:.2f}",
-                "最新股價": "{:.2f}",
-                "總成本": "${:,.0f}",          
-                "目前市值": "${:,.0f}",
-                "淨損益": "${:,.0f}",
-                "報酬率 (%)": "{:.1f}"  
-            })
-            
-            st.table(styled_table)
-            
-            csv = df_portfolio.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label=f"📥 下載【{cat}】持股明細 (CSV/Excel)",
-                data=csv,
-                file_name=f"{cat}_的持股明細.csv",
-                mime="text/csv",
-                key=f"download_{cat}" 
-            )
-            
-            st.divider() 
-            
-        st.caption("💡 想要把完整畫面匯出 PDF？直接使用瀏覽器的「列印 ➔ 另存為 PDF」功能，排版最完美！")
-    else:
-        st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D2
