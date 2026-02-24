@@ -208,7 +208,6 @@ with tab1:
                 increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
             
-            # 🌟 升級：鎖定主圖 Y 軸，不准手動拉伸縮放 (fixedrange=True)
             fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=1, col=1)
             
             for ma_col, color in ma_lines.items():
@@ -250,13 +249,11 @@ with tab1:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
-                    # 🌟 升級：鎖死成交量 Y 軸 (fixedrange=True)
                     fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
-                    # 🌟 已經鎖死
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "MACD":
@@ -264,14 +261,12 @@ with tab1:
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='OSC'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='DIF', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='MACD', line=dict(color='#FFA500')), row=current_row, col=1)
-                    # 🌟 升級：鎖死 MACD Y 軸 (fixedrange=True)
                     fig.update_yaxes(fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
-                    # 🌟 已經鎖死
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                 
                 current_row += 1
@@ -304,11 +299,23 @@ with tab2:
             stock_name = info['name']
             category = info['category']
             
+            # 🌟 升級 1：抓取過去 5 天的資料，確保一定拿得到「昨天」的收盤價
             tick = yf.Ticker(symbol)
-            hist = tick.history(period="1d")
+            hist = tick.history(period="5d")
             
             if not hist.empty:
                 current_price = hist['Close'].iloc[-1]
+                
+                # 取出昨天的收盤價 (防呆機制：如果剛上市只有1天資料，就預設等於今天)
+                if len(hist) >= 2:
+                    prev_price = hist['Close'].iloc[-2]
+                else:
+                    prev_price = current_price
+                
+                # 計算當日變動
+                daily_price_diff = current_price - prev_price
+                daily_pct_diff = (daily_price_diff / prev_price) * 100 if prev_price > 0 else 0
+                daily_profit_diff = daily_price_diff * shares
                 
                 stock_cost_raw = cost * shares
                 stock_value_raw = current_price * shares
@@ -335,6 +342,8 @@ with tab2:
                     "持股數": shares,
                     "平均成本": cost,
                     "最新股價": round(current_price, 2),
+                    "今日漲跌 (%)": round(daily_pct_diff, 2), # 🌟 新增：今日漲跌
+                    "今日獲利增減": round(daily_profit_diff, 0), # 🌟 新增：今日賺賠金額
                     "總成本": true_stock_cost,       
                     "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0),
@@ -366,11 +375,17 @@ with tab2:
             cat_total_profit = sum([p["淨損益"] for p in cat_records])
             cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
             
+            # 🌟 計算該帳戶今天的總獲利增減
+            cat_daily_profit_total = sum([p["今日獲利增減"] for p in cat_records])
+            
             st.markdown(f"### 👤 【{cat}】的專屬資產")
             
             col1, col2, col3 = st.columns(3)
             col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
-            col2.metric("目前總市值", f"${cat_total_value:,.0f}")
+            
+            # 🌟 升級 2：在市值下方顯示「今日總增減」，套用 inverse (紅=賺, 綠=賠)
+            col2.metric("目前總市值", f"${cat_total_value:,.0f}", f"{cat_daily_profit_total:+,.0f}", delta_color="inverse")
+            
             col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%", delta_color="inverse")
             
             display_list = []
@@ -382,10 +397,13 @@ with tab2:
             df_portfolio = pd.DataFrame(display_list)
             df_portfolio.index = df_portfolio.index + 1
             
-            styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)"]).format({
+            # 🌟 升級 3：把新加入的「今日漲跌」與「今日獲利增減」也加入紅綠上色的行列
+            styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)", "今日漲跌 (%)", "今日獲利增減"]).format({
                 "持股數": "{:,.0f}",
                 "平均成本": "{:.2f}",
                 "最新股價": "{:.2f}",
+                "今日漲跌 (%)": "{:.2f}",
+                "今日獲利增減": "${:,.0f}",
                 "總成本": "${:,.0f}",          
                 "目前市值": "${:,.0f}",
                 "淨損益": "${:,.0f}",
