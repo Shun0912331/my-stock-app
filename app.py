@@ -72,7 +72,7 @@ def load_portfolio(url):
 
 MY_PORTFOLIO = load_portfolio(SHEET_URL)
 
-tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 全市場大盤分析"])
+tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 台股 Top 50 權值股與產業觀測站"])
 
 # ----------------------------------------
 # 分頁 1：個股技術分析與基本面
@@ -154,14 +154,10 @@ with tab1:
         if not df_raw.empty:
             df_raw.index = df_raw.index.tz_localize(None)
             
-            if tf_option == "日線":
-                df = df_raw.copy()
-            elif tf_option == "週線":
-                df = df_raw.resample('W-FRI').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
-            elif tf_option == "月線":
-                df = df_raw.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
-            elif tf_option == "年線":
-                df = df_raw.resample('YE').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+            if tf_option == "日線": df = df_raw.copy()
+            elif tf_option == "週線": df = df_raw.resample('W-FRI').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+            elif tf_option == "月線": df = df_raw.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
+            elif tf_option == "年線": df = df_raw.resample('YE').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
 
             ma_colors = ['#FFA500', '#FF1493', '#00BFFF', '#9932CC', '#32CD32', '#FF0000', '#0000FF']
             ma_lines = {}
@@ -193,10 +189,8 @@ with tab1:
             df_plot = df.tail(display_bars)
             
             rows = 1 + len(selected_inds)
-            if rows == 1:
-                row_heights = [1.0]
-            else:
-                row_heights = [0.5] + [0.5 / len(selected_inds)] * len(selected_inds)
+            if rows == 1: row_heights = [1.0]
+            else: row_heights = [0.5] + [0.5 / len(selected_inds)] * len(selected_inds)
                 
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
@@ -343,53 +337,68 @@ with tab2:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：全市場大盤分析
+# 🌟 分頁 3：台股 Top 50 權值股與產業觀測站 (新增飆股雷達)
 # ----------------------------------------
 with tab3:
-    st.subheader("🌍 台灣股市大盤與產業分析")
-    st.markdown("*(💡 系統追蹤加權指數、台股 Top 50 權值股，以及您持有的專屬 ETF 作為市場資金縮影。)*")
+    st.subheader("🌍 台股 Top 50 權值股與產業觀測站")
+    st.warning("⏱️ 溫馨提示：本頁面資料每 30 分鐘更新一次 (避免遭到雅虎封鎖)。以下包含大型權值股流向，以及精選 80 檔熱門題材飆股之雷達掃描。")
     
-    # 🌟 修復重複標籤問題：使用字典(dict)來過濾掉重複的 ETF 代號
     user_etf_dict = {}
     for p in MY_PORTFOLIO:
         if str(p['symbol']).startswith("00"):
             user_etf_dict[p['symbol']] = p['name']
-    
-    # 將去重後的資料轉換為 tuple 傳入快取
     user_etfs = tuple(user_etf_dict.items())
     
-    @st.cache_data(ttl=300) 
+    # 🌟 設定 TTL 為 1800 秒 (30 分鐘)，完美平衡資料新鮮度與伺服器安全
+    @st.cache_data(ttl=1800) 
     def get_market_data(etf_tuple):
         market_tickers = {
-            "^TWII": "加權指數 (大盤)", "^TWOII": "櫃買指數 (中小型)",
-            "0050.TW": "元大台灣50", "0056.TW": "元大高股息", "00878.TW": "國泰永續高股息",
-            "00881.TW": "國泰台灣5G+", "0055.TW": "元大MSCI金融",
-            "2330.TW": "台積電", "2317.TW": "鴻海", "2454.TW": "聯發科",
-            "2308.TW": "台達電", "2881.TW": "富邦金", "2603.TW": "長榮",
-            "2382.TW": "廣達", "1101.TW": "台泥", "2002.TW": "中鋼",
-            "1216.TW": "統一", "2891.TW": "中信金", "2882.TW": "國泰金",
-            "2412.TW": "中華電", "3045.TW": "台灣大", "3231.TW": "緯創",
-            "3711.TW": "日月光投控", "2303.TW": "聯電", "2886.TW": "兆豐金",
-            "2884.TW": "玉山金", "1301.TW": "台塑", "1303.TW": "南亞",
-            "2885.TW": "元大金", "2345.TW": "智邦", "2357.TW": "華碩",
-            "2892.TW": "第一金", "2379.TW": "瑞昱", "2395.TW": "研華",
-            "5871.TW": "中租-KY", "2880.TW": "華南金", "2883.TW": "開發金",
-            "5880.TW": "合庫金", "1326.TW": "台化", "2207.TW": "和泰車",
-            "2324.TW": "仁寶", "2353.TW": "宏碁", "3034.TW": "聯詠",
-            "2887.TW": "台新金", "2890.TW": "永豐金", "2609.TW": "陽明", "2615.TW": "萬海"
+            "^TWII": ("加權指數 (大盤)", "大盤"), "^TWOII": ("櫃買指數 (中小型)", "大盤"),
+            "0050.TW": ("元大台灣50", "ETF"), "0056.TW": ("元大高股息", "ETF"), "00878.TW": ("國泰永續高股息", "ETF"),
+            "00881.TW": ("國泰台灣5G+", "ETF"), "0055.TW": ("元大MSCI金融", "ETF"),
+            "2330.TW": ("台積電", "半導體"), "2317.TW": ("鴻海", "其他電子"), "2454.TW": ("聯發科", "半導體"),
+            "2308.TW": ("台達電", "電子零組件"), "2881.TW": ("富邦金", "金融保險"), "2603.TW": ("長榮", "航運業"),
+            "2382.TW": ("廣達", "電腦及週邊"), "1101.TW": ("台泥", "水泥工業"), "2002.TW": ("中鋼", "鋼鐵工業"),
+            "1216.TW": ("統一", "食品工業"), "2891.TW": ("中信金", "金融保險"), "2882.TW": ("國泰金", "金融保險"),
+            "2412.TW": ("中華電", "通信網路"), "3045.TW": ("台灣大", "通信網路"), "3231.TW": ("緯創", "電腦及週邊"),
+            "3711.TW": ("日月光投控", "半導體"), "2303.TW": ("聯電", "半導體"), "2886.TW": ("兆豐金", "金融保險"),
+            "2884.TW": ("玉山金", "金融保險"), "1301.TW": ("台塑", "塑膠工業"), "1303.TW": ("南亞", "塑膠工業"),
+            "2885.TW": ("元大金", "金融保險"), "2345.TW": ("智邦", "通信網路"), "2357.TW": ("華碩", "電腦及週邊"),
+            "2892.TW": ("第一金", "金融保險"), "2379.TW": ("瑞昱", "半導體"), "2395.TW": ("研華", "電腦及週邊"),
+            "5871.TW": ("中租-KY", "其他業"), "2880.TW": ("華南金", "金融保險"), "2883.TW": ("開發金", "金融保險"),
+            "5880.TW": ("合庫金", "金融保險"), "1326.TW": ("台化", "塑膠工業"), "2207.TW": ("和泰車", "汽車工業"),
+            "2324.TW": ("仁寶", "電腦及週邊"), "2353.TW": ("宏碁", "電腦及週邊"), "3034.TW": ("聯詠", "半導體"),
+            "2887.TW": ("台新金", "金融保險"), "2890.TW": ("永豐金", "金融保險"), "2609.TW": ("陽明", "航運業"), "2615.TW": ("萬海", "航運業")
         }
         
-        # 🌟 雙重防呆：確保 (我的持股) 標籤絕對只會出現一次
+        # 🌟 重磅擴充：加入台股高人氣、高波動之「中小型熱門題材股 (AI、散熱、設備、重電等)」
+        hot_stocks = {
+            "3324.TW": ("雙鴻", "散熱模組"), "3017.TW": ("奇鋐", "散熱模組"), "2421.TW": ("建準", "散熱模組"), 
+            "3013.TW": ("晟銘電", "機殼組裝"), "2376.TW": ("技嘉", "電腦及週邊"), "6669.TW": ("緯穎", "電腦及週邊"), 
+            "2356.TW": ("英業達", "電腦及週邊"), "3443.TW": ("創意", "矽智財"), "3661.TW": ("世芯-KY", "矽智財"), 
+            "3529.TW": ("力旺", "矽智財"), "3131.TW": ("弘塑", "半導體設備"), "6187.TW": ("萬潤", "半導體設備"), 
+            "3583.TW": ("辛耘", "半導體設備"), "1560.TW": ("中砂", "半導體設備"), "5443.TW": ("均豪", "半導體設備"), 
+            "2360.TW": ("致茂", "檢測設備"), "2368.TW": ("金像電", "PCB"), "3037.TW": ("欣興", "PCB"), 
+            "8046.TW": ("南電", "PCB"), "2383.TW": ("台光電", "銅箔基板"), "6274.TW": ("台燿", "銅箔基板"), 
+            "2313.TW": ("華通", "PCB"), "3081.TW": ("聯亞", "光通訊"), "3362.TW": ("先進光", "光電業"), 
+            "3293.TW": ("鈊象", "文化創意"), "1519.TW": ("華城", "電機機械"), "1513.TW": ("中興電", "電機機械"),
+            "8936.TW": ("國統", "電機機械"), "2439.TW": ("美律", "電子零組件"), "6239.TW": ("力成", "半導體")
+        }
+        market_tickers.update(hot_stocks)
+        
         for sym, name in etf_tuple:
             if sym not in market_tickers:
-                market_tickers[sym] = f"{name} (我的持股)"
-            elif "(我的持股)" not in market_tickers[sym]:
-                market_tickers[sym] = f"{market_tickers[sym]} (我的持股)"
+                market_tickers[sym] = (f"{name} (我的持股)", "ETF")
+            else:
+                existing_name = market_tickers[sym][0]
+                existing_sector = market_tickers[sym][1]
+                if "(我的持股)" not in existing_name:
+                    market_tickers[sym] = (f"{existing_name} (我的持股)", existing_sector)
                 
         symbols = list(market_tickers.keys())
         data_list = []
         
-        prog_bar = st.progress(0, text="正在掃描全市場指標股數據...")
+        prog_bar = st.progress(0, text="📡 正在進行每半小時的深度飆股雷達掃描 (約需 15 秒)...")
         
         for i, sym in enumerate(symbols):
             try:
@@ -404,14 +413,15 @@ with tab3:
                     
                     data_list.append({
                         "代號": sym.replace(".TW", ""),
-                        "名稱": market_tickers[sym],
+                        "名稱": market_tickers[sym][0],
+                        "產業別": market_tickers[sym][1], 
                         "最新報價": round(curr, 2),
                         "漲跌點數": round(diff, 2),
                         "漲跌幅 (%)": round(pct, 2),
                         "成交量 (張)": round(vol / 1000, 0) if sym not in ["^TWII", "^TWOII"] else "大盤總量" 
                     })
             except: pass
-            prog_bar.progress((i + 1) / len(symbols), text=f"正在解析 {market_tickers[sym]}...")
+            prog_bar.progress((i + 1) / len(symbols), text=f"正在解析 {market_tickers[sym][0]}...")
             
         prog_bar.empty()
         return pd.DataFrame(data_list)
@@ -435,36 +445,77 @@ with tab3:
         
         df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
         
+        # 🌟 飆股雷達區塊 (自動過濾漲幅 > 4% 的標的)
+        st.markdown("### 🚀 盤中飆股雷達 (漲幅 > 4%)")
+        df_corp = df_stocks[df_stocks["產業別"] != "ETF"].copy()
+        df_soaring = df_corp[df_corp["漲跌幅 (%)"] >= 4.0].sort_values(by="漲跌幅 (%)", ascending=False)
+        
+        if not df_soaring.empty:
+            df_soaring.index = range(1, len(df_soaring) + 1)
+            st.table(df_soaring[["產業別", "名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({
+                "最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
+            }))
+        else:
+            st.info("💡 目前雷達掃描範圍內，暫無單日漲幅超過 4% 的強勢標的。")
+
+        st.divider()
+        
         st.markdown("### 🏢 產業板塊與主題表現 (含專屬持股)")
-        df_etf = df_stocks[df_stocks["代號"].str.startswith("00")].copy()
+        df_etf = df_stocks[df_stocks["產業別"] == "ETF"].copy()
         df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False)
         df_etf.index = range(1, len(df_etf) + 1)
-        st.table(df_etf.style.apply(color_tw_col, subset=["漲跌點數", "漲跌幅 (%)"]).format({
+        st.table(df_etf[["名稱", "最新報價", "漲跌點數", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌點數", "漲跌幅 (%)"]).format({
             "最新報價": "{:.2f}", "漲跌點數": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
         }))
         
         st.divider()
         
-        st.markdown("### 🔥 市場焦點權值股戰況 (Top 30)")
-        df_corp = df_stocks[~df_stocks["代號"].str.startswith("00")].copy()
+        st.markdown("### 🔥 市場焦點戰況 (Top 30)")
+        
+        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
+        
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.markdown("#### 🎯 焦點資金產業佔比 (依成交量 Top 30)")
+            sector_counts = top_vol['產業別'].value_counts().reset_index()
+            sector_counts.columns = ['產業別', '檔數']
+            
+            fig_pie = go.Figure(data=[go.Pie(labels=sector_counts['產業別'], values=sector_counts['檔數'], hole=.4, textinfo='label+percent')])
+            fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, showlegend=True)
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+        with col_c2:
+            st.markdown("#### 📊 各大產業板塊平均漲跌幅")
+            sector_perf = df_corp.groupby("產業別")["漲跌幅 (%)"].mean().reset_index()
+            sector_perf = sector_perf.sort_values(by="漲跌幅 (%)", ascending=False)
+            
+            fig_bar = go.Figure(data=[go.Bar(
+                x=sector_perf['產業別'], 
+                y=sector_perf['漲跌幅 (%)'],
+                marker_color=['#FF4B4B' if val > 0 else '#00D26A' for val in sector_perf['漲跌幅 (%)']],
+                text=[f"{val:.2f}%" for val in sector_perf['漲跌幅 (%)']], textposition='outside'
+            )])
+            fig_bar.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, yaxis=dict(title="平均漲跌幅 (%)"))
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        st.markdown("---")
         
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("#### 🏆 強勢領漲排行")
             top_gainers = df_corp.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
             top_gainers.index = range(1, len(top_gainers) + 1)
-            st.table(top_gainers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
+            st.table(top_gainers[["產業別", "名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
         with col_r2:
             st.markdown("#### 📉 弱勢回檔排行")
             top_losers = df_corp.sort_values(by="漲跌幅 (%)", ascending=True).head(30)
             top_losers.index = range(1, len(top_losers) + 1)
-            st.table(top_losers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
+            st.table(top_losers[["產業別", "名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
         st.markdown("#### 💥 市場吸金人氣王 (成交量 Top 30)")
-        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
         top_vol.index = range(1, len(top_vol) + 1)
-        st.table(top_vol[["名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
+        st.table(top_vol[["產業別", "名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
         
     else:
         st.error("暫時無法取得大盤資料，請稍後再試。")
