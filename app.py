@@ -343,18 +343,23 @@ with tab2:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：全市場大盤分析 (已擴充 Top 30 與專屬 ETF)
+# 🌟 分頁 3：全市場大盤分析
 # ----------------------------------------
 with tab3:
     st.subheader("🌍 台灣股市大盤與產業分析")
     st.markdown("*(💡 系統追蹤加權指數、台股 Top 50 權值股，以及您持有的專屬 ETF 作為市場資金縮影。)*")
     
-    # 🌟 擷取您持有的所有 ETF，打包成 Tuple 傳給快取函式
-    user_etfs = tuple([(p['symbol'], p['name']) for p in MY_PORTFOLIO if str(p['symbol']).startswith("00")])
+    # 🌟 修復重複標籤問題：使用字典(dict)來過濾掉重複的 ETF 代號
+    user_etf_dict = {}
+    for p in MY_PORTFOLIO:
+        if str(p['symbol']).startswith("00"):
+            user_etf_dict[p['symbol']] = p['name']
+    
+    # 將去重後的資料轉換為 tuple 傳入快取
+    user_etfs = tuple(user_etf_dict.items())
     
     @st.cache_data(ttl=300) 
     def get_market_data(etf_tuple):
-        # 🌟 擴充了台股最具代表性的 40 多檔超大型權值股，確保 Top 30 排行榜夠精準
         market_tickers = {
             "^TWII": "加權指數 (大盤)", "^TWOII": "櫃買指數 (中小型)",
             "0050.TW": "元大台灣50", "0056.TW": "元大高股息", "00878.TW": "國泰永續高股息",
@@ -374,12 +379,11 @@ with tab3:
             "2887.TW": "台新金", "2890.TW": "永豐金", "2609.TW": "陽明", "2615.TW": "萬海"
         }
         
-        # 🌟 把您的持股 ETF 動態塞進去，並加上專屬標籤
+        # 🌟 雙重防呆：確保 (我的持股) 標籤絕對只會出現一次
         for sym, name in etf_tuple:
             if sym not in market_tickers:
                 market_tickers[sym] = f"{name} (我的持股)"
-            else:
-                # 如果這檔 ETF 剛好本來就在觀察名單內，就直接在後面貼上標籤
+            elif "(我的持股)" not in market_tickers[sym]:
                 market_tickers[sym] = f"{market_tickers[sym]} (我的持股)"
                 
         symbols = list(market_tickers.keys())
@@ -415,7 +419,6 @@ with tab3:
     df_market = get_market_data(user_etfs)
     
     if not df_market.empty:
-        # --- 區塊 1：大盤指數表現 ---
         st.markdown("### 📊 大盤與櫃買指數表現")
         idx_cols = st.columns(2)
         twii_data = df_market[df_market["代號"] == "^TWII"]
@@ -432,7 +435,6 @@ with tab3:
         
         df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
         
-        # --- 區塊 2：產業板塊 (ETF) 表現 ---
         st.markdown("### 🏢 產業板塊與主題表現 (含專屬持股)")
         df_etf = df_stocks[df_stocks["代號"].str.startswith("00")].copy()
         df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False)
@@ -443,27 +445,23 @@ with tab3:
         
         st.divider()
         
-        # --- 區塊 3：權值股排行戰況 (🌟 已擴展為 Top 30) ---
         st.markdown("### 🔥 市場焦點權值股戰況 (Top 30)")
         df_corp = df_stocks[~df_stocks["代號"].str.startswith("00")].copy()
         
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("#### 🏆 強勢領漲排行")
-            # 🌟 這裡將原本的 .head(5) 改為 .head(30)
             top_gainers = df_corp.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
             top_gainers.index = range(1, len(top_gainers) + 1)
             st.table(top_gainers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
         with col_r2:
             st.markdown("#### 📉 弱勢回檔排行")
-            # 🌟 這裡將原本的 .head(5) 改為 .head(30)
             top_losers = df_corp.sort_values(by="漲跌幅 (%)", ascending=True).head(30)
             top_losers.index = range(1, len(top_losers) + 1)
             st.table(top_losers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
         st.markdown("#### 💥 市場吸金人氣王 (成交量 Top 30)")
-        # 🌟 這裡將原本的 .head(5) 改為 .head(30)
         top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
         top_vol.index = range(1, len(top_vol) + 1)
         st.table(top_vol[["名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
