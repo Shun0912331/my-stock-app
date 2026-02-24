@@ -7,8 +7,12 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD
 import twstock
 
+# 把網頁標籤也改成帥順的專屬名稱
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
+# ==========================================
+# 🎨 專屬介面優化：自適應表格寬度
+# ==========================================
 st.markdown("""
 <style>
 [data-testid="stTable"] table { width: max-content !important; }
@@ -17,6 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def color_tw_col(s):
+    """將 DataFrame 直行套用台股紅綠色"""
     return ['color: #FF4B4B' if isinstance(v, (int, float)) and v > 0 
             else 'color: #00D26A' if isinstance(v, (int, float)) and v < 0 
             else '' for v in s]
@@ -29,6 +34,9 @@ def fmt_val(val):
     if val is None or pd.isna(val): return "無資料"
     return f"{val:.2f}"
 
+# ==========================================
+# 🚀 正式內容開始
+# ==========================================
 st.title("🚀 帥順股市分析與資產管理神器")
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748KJh4hkU3KB26odS4uTfP7AZQgNcR0zvQVvjjYOfIvku-5vi8FcyW2BxNBDtq/pub?output=csv"
@@ -64,7 +72,6 @@ def load_portfolio(url):
 
 MY_PORTFOLIO = load_portfolio(SHEET_URL)
 
-# 🌟 新增了第三個分頁：全市場大盤分析
 tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 全市場大盤分析"])
 
 # ----------------------------------------
@@ -99,6 +106,7 @@ with tab1:
     
     if ticker_symbol:
         ticker_data = yf.Ticker(ticker_symbol)
+        
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
         info = ticker_data.info
         
@@ -163,10 +171,8 @@ with tab1:
                 ma_lines[f'MA{ma_val}'] = ma_colors[i % len(ma_colors)]
 
             if show_cross:
-                if 'MA5' not in df.columns:
-                    df['MA5'] = df['Close'].rolling(window=5).mean()
-                if 'MA20' not in df.columns:
-                    df['MA20'] = df['Close'].rolling(window=20).mean()
+                if 'MA5' not in df.columns: df['MA5'] = df['Close'].rolling(window=5).mean()
+                if 'MA20' not in df.columns: df['MA20'] = df['Close'].rolling(window=20).mean()
                 df['Golden_Cross'] = (df['MA5'] > df['MA20']) & (df['MA5'].shift(1) <= df['MA20'].shift(1))
                 df['Death_Cross'] = (df['MA5'] < df['MA20']) & (df['MA5'].shift(1) >= df['MA20'].shift(1))
 
@@ -202,11 +208,9 @@ with tab1:
 
             if show_cross:
                 golden_mask = df_plot['Golden_Cross'] == True
-                if golden_mask.any():
-                    fig.add_trace(go.Scatter(x=df_plot[golden_mask].index, y=df_plot[golden_mask]['Low'] * 0.98, mode='markers', marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')), name='黃金交叉 (5上穿20)'), row=1, col=1)
+                if golden_mask.any(): fig.add_trace(go.Scatter(x=df_plot[golden_mask].index, y=df_plot[golden_mask]['Low'] * 0.98, mode='markers', marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')), name='黃金交叉 (5上穿20)'), row=1, col=1)
                 death_mask = df_plot['Death_Cross'] == True
-                if death_mask.any():
-                    fig.add_trace(go.Scatter(x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02, mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')), name='死亡交叉 (5下穿20)'), row=1, col=1)
+                if death_mask.any(): fig.add_trace(go.Scatter(x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02, mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')), name='死亡交叉 (5下穿20)'), row=1, col=1)
 
             if show_pe_river:
                 try:
@@ -264,10 +268,8 @@ with tab2:
             
             if not hist.empty:
                 current_price = hist['Close'].iloc[-1]
-                if len(hist) >= 2:
-                    prev_price = hist['Close'].iloc[-2]
-                else:
-                    prev_price = current_price
+                if len(hist) >= 2: prev_price = hist['Close'].iloc[-2]
+                else: prev_price = current_price
                 
                 daily_price_diff = current_price - prev_price
                 daily_pct_diff = (daily_price_diff / prev_price) * 100 if prev_price > 0 else 0
@@ -279,12 +281,8 @@ with tab2:
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
                 
-                if symbol.startswith("00"):
-                    tax = stock_value_raw * 0.001
-                    type_label = "ETF"
-                else:
-                    tax = stock_value_raw * 0.003
-                    type_label = "個股"
+                if symbol.startswith("00"): tax = stock_value_raw * 0.001; type_label = "ETF"
+                else: tax = stock_value_raw * 0.003; type_label = "個股"
                 
                 true_stock_cost = stock_cost_raw + buy_fee
                 true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
@@ -345,39 +343,48 @@ with tab2:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：全市場大盤分析 (新功能)
+# 🌟 分頁 3：全市場大盤分析 (已擴充 Top 30 與專屬 ETF)
 # ----------------------------------------
 with tab3:
     st.subheader("🌍 台灣股市大盤與產業分析")
-    st.markdown("*(💡 註：為維持系統極速運算，此區塊追蹤「加權指數」與「台股最具代表性之 30 大權值股及產業 ETF」作為全市場縮影。)*")
+    st.markdown("*(💡 系統追蹤加權指數、台股 Top 50 權值股，以及您持有的專屬 ETF 作為市場資金縮影。)*")
     
-    @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫
-    def get_market_data():
-        # 定義大盤、產業代表 ETF、以及重要權值股
+    # 🌟 擷取您持有的所有 ETF，打包成 Tuple 傳給快取函式
+    user_etfs = tuple([(p['symbol'], p['name']) for p in MY_PORTFOLIO if str(p['symbol']).startswith("00")])
+    
+    @st.cache_data(ttl=300) 
+    def get_market_data(etf_tuple):
+        # 🌟 擴充了台股最具代表性的 40 多檔超大型權值股，確保 Top 30 排行榜夠精準
         market_tickers = {
-            "^TWII": "加權指數 (大盤)",
-            "^TWOII": "櫃買指數 (中小型)",
-            "0050.TW": "元大台灣50 (大盤縮影)",
-            "0056.TW": "元大高股息 (高息代表)",
-            "00878.TW": "國泰永續高股息 (ESG)",
-            "00881.TW": "國泰台灣5G+ (科技產業)",
-            "0055.TW": "元大MSCI金融 (金融產業)",
-            "2330.TW": "台積電 (半導體)",
-            "2317.TW": "鴻海 (代工)",
-            "2454.TW": "聯發科 (IC設計)",
-            "2308.TW": "台達電 (電源/綠能)",
-            "2881.TW": "富邦金 (金融)",
-            "2603.TW": "長榮 (航運)",
-            "2382.TW": "廣達 (AI伺服器)",
-            "1101.TW": "台泥 (傳產建材)",
-            "2002.TW": "中鋼 (傳產鋼鐵)",
-            "1216.TW": "統一 (傳產食品)"
+            "^TWII": "加權指數 (大盤)", "^TWOII": "櫃買指數 (中小型)",
+            "0050.TW": "元大台灣50", "0056.TW": "元大高股息", "00878.TW": "國泰永續高股息",
+            "00881.TW": "國泰台灣5G+", "0055.TW": "元大MSCI金融",
+            "2330.TW": "台積電", "2317.TW": "鴻海", "2454.TW": "聯發科",
+            "2308.TW": "台達電", "2881.TW": "富邦金", "2603.TW": "長榮",
+            "2382.TW": "廣達", "1101.TW": "台泥", "2002.TW": "中鋼",
+            "1216.TW": "統一", "2891.TW": "中信金", "2882.TW": "國泰金",
+            "2412.TW": "中華電", "3045.TW": "台灣大", "3231.TW": "緯創",
+            "3711.TW": "日月光投控", "2303.TW": "聯電", "2886.TW": "兆豐金",
+            "2884.TW": "玉山金", "1301.TW": "台塑", "1303.TW": "南亞",
+            "2885.TW": "元大金", "2345.TW": "智邦", "2357.TW": "華碩",
+            "2892.TW": "第一金", "2379.TW": "瑞昱", "2395.TW": "研華",
+            "5871.TW": "中租-KY", "2880.TW": "華南金", "2883.TW": "開發金",
+            "5880.TW": "合庫金", "1326.TW": "台化", "2207.TW": "和泰車",
+            "2324.TW": "仁寶", "2353.TW": "宏碁", "3034.TW": "聯詠",
+            "2887.TW": "台新金", "2890.TW": "永豐金", "2609.TW": "陽明", "2615.TW": "萬海"
         }
         
+        # 🌟 把您的持股 ETF 動態塞進去，並加上專屬標籤
+        for sym, name in etf_tuple:
+            if sym not in market_tickers:
+                market_tickers[sym] = f"{name} (我的持股)"
+            else:
+                # 如果這檔 ETF 剛好本來就在觀察名單內，就直接在後面貼上標籤
+                market_tickers[sym] = f"{market_tickers[sym]} (我的持股)"
+                
         symbols = list(market_tickers.keys())
         data_list = []
         
-        # 建立進度條
         prog_bar = st.progress(0, text="正在掃描全市場指標股數據...")
         
         for i, sym in enumerate(symbols):
@@ -399,14 +406,13 @@ with tab3:
                         "漲跌幅 (%)": round(pct, 2),
                         "成交量 (張)": round(vol / 1000, 0) if sym not in ["^TWII", "^TWOII"] else "大盤總量" 
                     })
-            except:
-                pass
+            except: pass
             prog_bar.progress((i + 1) / len(symbols), text=f"正在解析 {market_tickers[sym]}...")
             
         prog_bar.empty()
         return pd.DataFrame(data_list)
         
-    df_market = get_market_data()
+    df_market = get_market_data(user_etfs)
     
     if not df_market.empty:
         # --- 區塊 1：大盤指數表現 ---
@@ -424,11 +430,10 @@ with tab3:
             
         st.divider()
         
-        # 將大盤指數從排行中剔除，只保留個股與 ETF
         df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
         
         # --- 區塊 2：產業板塊 (ETF) 表現 ---
-        st.markdown("### 🏢 產業板塊與主題表現 (代表性 ETF)")
+        st.markdown("### 🏢 產業板塊與主題表現 (含專屬持股)")
         df_etf = df_stocks[df_stocks["代號"].str.startswith("00")].copy()
         df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False)
         df_etf.index = range(1, len(df_etf) + 1)
@@ -438,25 +443,28 @@ with tab3:
         
         st.divider()
         
-        # --- 區塊 3：權值股排行戰況 ---
-        st.markdown("### 🔥 市場焦點權值股戰況")
+        # --- 區塊 3：權值股排行戰況 (🌟 已擴展為 Top 30) ---
+        st.markdown("### 🔥 市場焦點權值股戰況 (Top 30)")
         df_corp = df_stocks[~df_stocks["代號"].str.startswith("00")].copy()
         
         col_r1, col_r2 = st.columns(2)
         with col_r1:
-            st.markdown("#### 🏆 強勢領漲排行 (漲幅 Top 5)")
-            top_gainers = df_corp.sort_values(by="漲跌幅 (%)", ascending=False).head(5)
+            st.markdown("#### 🏆 強勢領漲排行")
+            # 🌟 這裡將原本的 .head(5) 改為 .head(30)
+            top_gainers = df_corp.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
             top_gainers.index = range(1, len(top_gainers) + 1)
             st.table(top_gainers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
         with col_r2:
-            st.markdown("#### 📉 弱勢回檔排行 (跌幅 Top 5)")
-            top_losers = df_corp.sort_values(by="漲跌幅 (%)", ascending=True).head(5)
+            st.markdown("#### 📉 弱勢回檔排行")
+            # 🌟 這裡將原本的 .head(5) 改為 .head(30)
+            top_losers = df_corp.sort_values(by="漲跌幅 (%)", ascending=True).head(30)
             top_losers.index = range(1, len(top_losers) + 1)
             st.table(top_losers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
             
-        st.markdown("#### 💥 市場吸金人氣王 (成交量 Top 5)")
-        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(5)
+        st.markdown("#### 💥 市場吸金人氣王 (成交量 Top 30)")
+        # 🌟 這裡將原本的 .head(5) 改為 .head(30)
+        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
         top_vol.index = range(1, len(top_vol) + 1)
         st.table(top_vol[["名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
         
