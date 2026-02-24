@@ -208,7 +208,8 @@ with tab1:
                 increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
             ), row=1, col=1)
             
-            fig.update_yaxes(rangemode='nonnegative', row=1, col=1)
+            # 🌟 升級：鎖定主圖 Y 軸，不准手動拉伸縮放 (fixedrange=True)
+            fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=1, col=1)
             
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
@@ -249,24 +250,28 @@ with tab1:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
-                    fig.update_yaxes(rangemode='nonnegative', row=current_row, col=1)
+                    # 🌟 升級：鎖死成交量 Y 軸 (fixedrange=True)
+                    fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
+                    # 🌟 已經鎖死
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "MACD":
-                    # 🌟 已經將不專業的名稱全部正名！
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='OSC'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='DIF', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='MACD', line=dict(color='#FFA500')), row=current_row, col=1)
+                    # 🌟 升級：鎖死 MACD Y 軸 (fixedrange=True)
+                    fig.update_yaxes(fixedrange=True, row=current_row, col=1)
                     
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
+                    # 🌟 已經鎖死
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
                 
                 current_row += 1
