@@ -7,12 +7,8 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import MACD
 import twstock
 
-# 把網頁標籤也改成帥順的專屬名稱
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
-# ==========================================
-# 🎨 專屬介面優化：自適應表格寬度
-# ==========================================
 st.markdown("""
 <style>
 [data-testid="stTable"] table { width: max-content !important; }
@@ -21,7 +17,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def color_tw_col(s):
-    """將 DataFrame 直行套用台股紅綠色"""
     return ['color: #FF4B4B' if isinstance(v, (int, float)) and v > 0 
             else 'color: #00D26A' if isinstance(v, (int, float)) and v < 0 
             else '' for v in s]
@@ -34,9 +29,6 @@ def fmt_val(val):
     if val is None or pd.isna(val): return "無資料"
     return f"{val:.2f}"
 
-# ==========================================
-# 🚀 正式內容開始 (已暫時關閉密碼鎖功能)
-# ==========================================
 st.title("🚀 帥順股市分析與資產管理神器")
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ4j2F1BSeWfRyA748KJh4hkU3KB26odS4uTfP7AZQgNcR0zvQVvjjYOfIvku-5vi8FcyW2BxNBDtq/pub?output=csv"
@@ -72,7 +64,8 @@ def load_portfolio(url):
 
 MY_PORTFOLIO = load_portfolio(SHEET_URL)
 
-tab1, tab2 = st.tabs(["📈 個股技術分析", "💰 我的投資組合"])
+# 🌟 新增了第三個分頁：全市場大盤分析
+tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 全市場大盤分析"])
 
 # ----------------------------------------
 # 分頁 1：個股技術分析與基本面
@@ -106,7 +99,6 @@ with tab1:
     
     if ticker_symbol:
         ticker_data = yf.Ticker(ticker_symbol)
-        
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
         info = ticker_data.info
         
@@ -175,7 +167,6 @@ with tab1:
                     df['MA5'] = df['Close'].rolling(window=5).mean()
                 if 'MA20' not in df.columns:
                     df['MA20'] = df['Close'].rolling(window=20).mean()
-                
                 df['Golden_Cross'] = (df['MA5'] > df['MA20']) & (df['MA5'].shift(1) <= df['MA20'].shift(1))
                 df['Death_Cross'] = (df['MA5'] < df['MA20']) & (df['MA5'].shift(1) >= df['MA20'].shift(1))
 
@@ -203,11 +194,7 @@ with tab1:
                 
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
-            fig.add_trace(go.Candlestick(
-                x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'],
-                increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'
-            ), row=1, col=1)
-            
+            fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'), row=1, col=1)
             fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=1, col=1)
             
             for ma_col, color in ma_lines.items():
@@ -216,19 +203,10 @@ with tab1:
             if show_cross:
                 golden_mask = df_plot['Golden_Cross'] == True
                 if golden_mask.any():
-                    fig.add_trace(go.Scatter(
-                        x=df_plot[golden_mask].index, y=df_plot[golden_mask]['Low'] * 0.98,
-                        mode='markers', marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')),
-                        name='黃金交叉 (5上穿20)'
-                    ), row=1, col=1)
-                    
+                    fig.add_trace(go.Scatter(x=df_plot[golden_mask].index, y=df_plot[golden_mask]['Low'] * 0.98, mode='markers', marker=dict(symbol='triangle-up', size=14, color='#FF4B4B', line=dict(width=1, color='white')), name='黃金交叉 (5上穿20)'), row=1, col=1)
                 death_mask = df_plot['Death_Cross'] == True
                 if death_mask.any():
-                    fig.add_trace(go.Scatter(
-                        x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02,
-                        mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')),
-                        name='死亡交叉 (5下穿20)'
-                    ), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02, mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')), name='死亡交叉 (5下穿20)'), row=1, col=1)
 
             if show_pe_river:
                 try:
@@ -237,12 +215,8 @@ with tab1:
                         pe_ratios = [10, 12, 15, 18, 20, 25]
                         river_colors = ['#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594']
                         for pe, color in zip(pe_ratios, river_colors):
-                            fig.add_trace(go.Scatter(
-                                x=df_plot.index, y=[eps * pe]*len(df_plot), 
-                                name=f"{pe}X 本益比", line=dict(color=color, dash='dot', width=1.5)
-                            ), row=1, col=1)
-                except:
-                    pass
+                            fig.add_trace(go.Scatter(x=df_plot.index, y=[eps * pe]*len(df_plot), name=f"{pe}X 本益比", line=dict(color=color, dash='dot', width=1.5)), row=1, col=1)
+                except: pass
 
             current_row = 2
             for ind in selected_inds:
@@ -250,37 +224,25 @@ with tab1:
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
                     fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=current_row, col=1)
-                    
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
-                    
                 elif ind == "MACD":
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='OSC'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='DIF', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='MACD', line=dict(color='#FFA500')), row=current_row, col=1)
                     fig.update_yaxes(fixedrange=True, row=current_row, col=1)
-                    
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
-                
                 current_row += 1
                 
-            fig.update_layout(
-                xaxis_rangeslider_visible=False, 
-                height=400 + 150 * len(selected_inds),
-                margin=dict(l=10, r=10, t=80, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01),
-                dragmode='pan' 
-            )
-            
+            fig.update_layout(xaxis_rangeslider_visible=False, height=400 + 150 * len(selected_inds), margin=dict(l=10, r=10, t=80, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01), dragmode='pan')
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
-            
         else:
             st.error("找不到該股票資料，可能是代號錯誤或系統連線異常。")
 
@@ -291,35 +253,28 @@ with tab2:
     if MY_PORTFOLIO:
         portfolio_data = []
         my_bar = st.progress(0, text="正在為您結算持股最新報價...")
-        
         for i, info in enumerate(MY_PORTFOLIO):
             symbol = info['symbol']
             cost = info['cost']
             shares = info['shares']
             stock_name = info['name']
             category = info['category']
-            
-            # 🌟 升級 1：抓取過去 5 天的資料，確保一定拿得到「昨天」的收盤價
             tick = yf.Ticker(symbol)
             hist = tick.history(period="5d")
             
             if not hist.empty:
                 current_price = hist['Close'].iloc[-1]
-                
-                # 取出昨天的收盤價 (防呆機制：如果剛上市只有1天資料，就預設等於今天)
                 if len(hist) >= 2:
                     prev_price = hist['Close'].iloc[-2]
                 else:
                     prev_price = current_price
                 
-                # 計算當日變動
                 daily_price_diff = current_price - prev_price
                 daily_pct_diff = (daily_price_diff / prev_price) * 100 if prev_price > 0 else 0
                 daily_profit_diff = daily_price_diff * shares
                 
                 stock_cost_raw = cost * shares
                 stock_value_raw = current_price * shares
-                
                 discount = 0.6
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
@@ -336,56 +291,36 @@ with tab2:
                 roi = (true_profit / true_stock_cost) * 100 if true_stock_cost > 0 else 0
                 
                 portfolio_data.append({
-                    "category": category, 
-                    "股票名稱": stock_name,
-                    "股票代號": f"{symbol} ({type_label})",
-                    "持股數": shares,
-                    "平均成本": cost,
-                    "最新股價": round(current_price, 2),
-                    "今日漲跌 (%)": round(daily_pct_diff, 2), # 🌟 新增：今日漲跌
-                    "今日獲利增減": round(daily_profit_diff, 0), # 🌟 新增：今日賺賠金額
-                    "總成本": true_stock_cost,       
-                    "目前市值": round(stock_value_raw, 2),
-                    "淨損益": round(true_profit, 0),
-                    "報酬率 (%)": round(roi, 1) 
+                    "category": category, "股票名稱": stock_name, "股票代號": f"{symbol} ({type_label})",
+                    "持股數": shares, "平均成本": cost, "最新股價": round(current_price, 2),
+                    "今日漲跌 (%)": round(daily_pct_diff, 2), "今日獲利增減": round(daily_profit_diff, 0),
+                    "總成本": true_stock_cost, "目前市值": round(stock_value_raw, 2),
+                    "淨損益": round(true_profit, 0), "報酬率 (%)": round(roi, 1) 
                 })
             my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
-            
         my_bar.empty()
         
         grouped_data = {}
         for p in portfolio_data:
             cat = p["category"]
-            if cat not in grouped_data:
-                grouped_data[cat] = []
+            if cat not in grouped_data: grouped_data[cat] = []
             grouped_data[cat].append(p)
             
-        def sort_key(cat):
-            if cat in ["本人", "帥順"]: 
-                return 0
-            return 1
-            
+        def sort_key(cat): return 0 if cat in ["本人", "帥順"] else 1
         sorted_categories = sorted(grouped_data.keys(), key=sort_key)
         
         for cat in sorted_categories:
             cat_records = grouped_data[cat]
-            
             cat_total_cost = sum([p["總成本"] for p in cat_records])
             cat_total_value = sum([p["目前市值"] for p in cat_records])
             cat_total_profit = sum([p["淨損益"] for p in cat_records])
             cat_total_roi = (cat_total_profit / cat_total_cost) * 100 if cat_total_cost > 0 else 0
-            
-            # 🌟 計算該帳戶今天的總獲利增減
             cat_daily_profit_total = sum([p["今日獲利增減"] for p in cat_records])
             
             st.markdown(f"### 👤 【{cat}】的專屬資產")
-            
             col1, col2, col3 = st.columns(3)
             col1.metric("總成本 (含手續費)", f"${cat_total_cost:,.0f}")
-            
-            # 🌟 升級 2：在市值下方顯示「今日總增減」，套用 inverse (紅=賺, 綠=賠)
             col2.metric("目前總市值", f"${cat_total_value:,.0f}", f"{cat_daily_profit_total:+,.0f}", delta_color="inverse")
-            
             col3.metric("總未實現淨利", f"${cat_total_profit:,.0f}", f"{cat_total_roi:.1f}%", delta_color="inverse")
             
             display_list = []
@@ -396,33 +331,134 @@ with tab2:
                 
             df_portfolio = pd.DataFrame(display_list)
             df_portfolio.index = df_portfolio.index + 1
-            
-            # 🌟 升級 3：把新加入的「今日漲跌」與「今日獲利增減」也加入紅綠上色的行列
             styled_table = df_portfolio.style.apply(color_tw_col, subset=["淨損益", "報酬率 (%)", "今日漲跌 (%)", "今日獲利增減"]).format({
-                "持股數": "{:,.0f}",
-                "平均成本": "{:.2f}",
-                "最新股價": "{:.2f}",
-                "今日漲跌 (%)": "{:.2f}",
-                "今日獲利增減": "${:,.0f}",
-                "總成本": "${:,.0f}",          
-                "目前市值": "${:,.0f}",
-                "淨損益": "${:,.0f}",
-                "報酬率 (%)": "{:.1f}"  
+                "持股數": "{:,.0f}", "平均成本": "{:.2f}", "最新股價": "{:.2f}", "今日漲跌 (%)": "{:.2f}",
+                "今日獲利增減": "${:,.0f}", "總成本": "${:,.0f}", "目前市值": "${:,.0f}",
+                "淨損益": "${:,.0f}", "報酬率 (%)": "{:.1f}"  
             })
-            
             st.table(styled_table)
             
             csv = df_portfolio.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label=f"📥 下載【{cat}】持股明細 (CSV/Excel)",
-                data=csv,
-                file_name=f"{cat}_的持股明細.csv",
-                mime="text/csv",
-                key=f"download_{cat}" 
-            )
-            
+            st.download_button(label=f"📥 下載【{cat}】持股明細", data=csv, file_name=f"{cat}_明細.csv", mime="text/csv", key=f"dl_{cat}")
             st.divider() 
-            
-        st.caption("💡 想要把完整畫面匯出 PDF？直接使用瀏覽器的「列印 ➔ 另存為 PDF」功能，排版最完美！")
     else:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
+
+# ----------------------------------------
+# 🌟 分頁 3：全市場大盤分析 (新功能)
+# ----------------------------------------
+with tab3:
+    st.subheader("🌍 台灣股市大盤與產業分析")
+    st.markdown("*(💡 註：為維持系統極速運算，此區塊追蹤「加權指數」與「台股最具代表性之 30 大權值股及產業 ETF」作為全市場縮影。)*")
+    
+    @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫
+    def get_market_data():
+        # 定義大盤、產業代表 ETF、以及重要權值股
+        market_tickers = {
+            "^TWII": "加權指數 (大盤)",
+            "^TWOII": "櫃買指數 (中小型)",
+            "0050.TW": "元大台灣50 (大盤縮影)",
+            "0056.TW": "元大高股息 (高息代表)",
+            "00878.TW": "國泰永續高股息 (ESG)",
+            "00881.TW": "國泰台灣5G+ (科技產業)",
+            "0055.TW": "元大MSCI金融 (金融產業)",
+            "2330.TW": "台積電 (半導體)",
+            "2317.TW": "鴻海 (代工)",
+            "2454.TW": "聯發科 (IC設計)",
+            "2308.TW": "台達電 (電源/綠能)",
+            "2881.TW": "富邦金 (金融)",
+            "2603.TW": "長榮 (航運)",
+            "2382.TW": "廣達 (AI伺服器)",
+            "1101.TW": "台泥 (傳產建材)",
+            "2002.TW": "中鋼 (傳產鋼鐵)",
+            "1216.TW": "統一 (傳產食品)"
+        }
+        
+        symbols = list(market_tickers.keys())
+        data_list = []
+        
+        # 建立進度條
+        prog_bar = st.progress(0, text="正在掃描全市場指標股數據...")
+        
+        for i, sym in enumerate(symbols):
+            try:
+                t = yf.Ticker(sym)
+                hist = t.history(period="5d")
+                if len(hist) >= 2:
+                    curr = hist['Close'].iloc[-1]
+                    prev = hist['Close'].iloc[-2]
+                    vol = hist['Volume'].iloc[-1]
+                    diff = curr - prev
+                    pct = (diff / prev) * 100
+                    
+                    data_list.append({
+                        "代號": sym.replace(".TW", ""),
+                        "名稱": market_tickers[sym],
+                        "最新報價": round(curr, 2),
+                        "漲跌點數": round(diff, 2),
+                        "漲跌幅 (%)": round(pct, 2),
+                        "成交量 (張)": round(vol / 1000, 0) if sym not in ["^TWII", "^TWOII"] else "大盤總量" 
+                    })
+            except:
+                pass
+            prog_bar.progress((i + 1) / len(symbols), text=f"正在解析 {market_tickers[sym]}...")
+            
+        prog_bar.empty()
+        return pd.DataFrame(data_list)
+        
+    df_market = get_market_data()
+    
+    if not df_market.empty:
+        # --- 區塊 1：大盤指數表現 ---
+        st.markdown("### 📊 大盤與櫃買指數表現")
+        idx_cols = st.columns(2)
+        twii_data = df_market[df_market["代號"] == "^TWII"]
+        twoii_data = df_market[df_market["代號"] == "^TWOII"]
+        
+        if not twii_data.empty:
+            twii = twii_data.iloc[0]
+            idx_cols[0].metric(label="📈 加權指數 (集中市場)", value=f"{twii['最新報價']:,.2f}", delta=f"{twii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
+        if not twoii_data.empty:
+            twoii = twoii_data.iloc[0]
+            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twoii['漲跌幅 (%)']}%)", delta_color="inverse")
+            
+        st.divider()
+        
+        # 將大盤指數從排行中剔除，只保留個股與 ETF
+        df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
+        
+        # --- 區塊 2：產業板塊 (ETF) 表現 ---
+        st.markdown("### 🏢 產業板塊與主題表現 (代表性 ETF)")
+        df_etf = df_stocks[df_stocks["代號"].str.startswith("00")].copy()
+        df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False)
+        df_etf.index = range(1, len(df_etf) + 1)
+        st.table(df_etf.style.apply(color_tw_col, subset=["漲跌點數", "漲跌幅 (%)"]).format({
+            "最新報價": "{:.2f}", "漲跌點數": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
+        }))
+        
+        st.divider()
+        
+        # --- 區塊 3：權值股排行戰況 ---
+        st.markdown("### 🔥 市場焦點權值股戰況")
+        df_corp = df_stocks[~df_stocks["代號"].str.startswith("00")].copy()
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.markdown("#### 🏆 強勢領漲排行 (漲幅 Top 5)")
+            top_gainers = df_corp.sort_values(by="漲跌幅 (%)", ascending=False).head(5)
+            top_gainers.index = range(1, len(top_gainers) + 1)
+            st.table(top_gainers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
+            
+        with col_r2:
+            st.markdown("#### 📉 弱勢回檔排行 (跌幅 Top 5)")
+            top_losers = df_corp.sort_values(by="漲跌幅 (%)", ascending=True).head(5)
+            top_losers.index = range(1, len(top_losers) + 1)
+            st.table(top_losers[["名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
+            
+        st.markdown("#### 💥 市場吸金人氣王 (成交量 Top 5)")
+        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(5)
+        top_vol.index = range(1, len(top_vol) + 1)
+        st.table(top_vol[["名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
+        
+    else:
+        st.error("暫時無法取得大盤資料，請稍後再試。")
