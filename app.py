@@ -207,7 +207,9 @@ with tab1:
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
             fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'), row=1, col=1)
-            fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=1, col=1)
+            
+            # 🌟 升級解鎖：移除 fixedrange=True，讓雙指可以自由縮放 K 線，但依然保留 0 軸防護
+            fig.update_yaxes(rangemode='nonnegative', row=1, col=1)
             
             for ma_col, color in ma_lines.items():
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot[ma_col], line=dict(color=color, width=1.5), name=ma_col), row=1, col=1)
@@ -218,27 +220,39 @@ with tab1:
                 death_mask = df_plot['Death_Cross'] == True
                 if death_mask.any(): fig.add_trace(go.Scatter(x=df_plot[death_mask].index, y=df_plot[death_mask]['High'] * 1.02, mode='markers', marker=dict(symbol='triangle-down', size=14, color='#00D26A', line=dict(width=1, color='white')), name='死亡交叉 (5下穿20)'), row=1, col=1)
 
+            if show_pe_river:
+                try:
+                    eps = info.get('trailingEps', 0)
+                    if eps and eps > 0:
+                        pe_ratios = [10, 12, 15, 18, 20, 25]
+                        river_colors = ['#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594']
+                        for pe, color in zip(pe_ratios, river_colors):
+                            fig.add_trace(go.Scatter(x=df_plot.index, y=[eps * pe]*len(df_plot), name=f"{pe}X 本益比", line=dict(color=color, dash='dot', width=1.5)), row=1, col=1)
+                except: pass
+
             current_row = 2
             for ind in selected_inds:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
-                    fig.update_yaxes(rangemode='nonnegative', fixedrange=True, row=current_row, col=1)
+                    # 🌟 升級解鎖：移除 fixedrange=True
+                    fig.update_yaxes(rangemode='nonnegative', row=current_row, col=1)
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
-                    fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
+                    # 🌟 升級解鎖：只保留範圍 0~100 的初始設定，移除強硬封印
+                    fig.update_yaxes(range=[0, 100], row=current_row, col=1)
                 elif ind == "MACD":
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['MACD_hist'], marker_color=macd_colors, name='OSC'), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD'], name='DIF', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MACD_signal'], name='MACD', line=dict(color='#FFA500')), row=current_row, col=1)
-                    fig.update_yaxes(fixedrange=True, row=current_row, col=1)
                 elif ind == "RSI":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
-                    fig.update_yaxes(range=[0, 100], fixedrange=True, row=current_row, col=1)
+                    # 🌟 升級解鎖：只保留範圍 0~100 的初始設定，移除強硬封印
+                    fig.update_yaxes(range=[0, 100], row=current_row, col=1)
                 current_row += 1
                 
             fig.update_layout(xaxis_rangeslider_visible=False, height=400 + 150 * len(selected_inds), margin=dict(l=10, r=10, t=80, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01), dragmode='pan')
@@ -338,7 +352,7 @@ with tab2:
             st.divider() 
 
 # ----------------------------------------
-# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站 (終極防封鎖大覆蓋版)
+# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站
 # ----------------------------------------
 with tab3:
     st.subheader("🌍 台股主力 800 飆股雷達與產業觀測站")
@@ -356,23 +370,19 @@ with tab3:
             "^TWII": ("加權指數", "大盤"), "^TWOII": ("櫃買指數", "大盤")
         }
         
-        # 1. 加入經典 ETF 保底
         classic_etfs = ["0050.TW", "0056.TW", "00878.TW", "00881.TW", "0055.TW", "00929.TW", "00919.TW", "00713.TW"]
         for c_etf in classic_etfs:
             name = twstock.codes[c_etf.replace(".TW", "")].name if c_etf.replace(".TW", "") in twstock.codes else c_etf
             market_tickers[c_etf] = (name, "ETF")
 
-        # 🌟 2. 智能產業濾網：鎖定台股「最會飆、最活躍」的核心板塊
         hot_keywords = ['半導體', '電腦', '電子零組件', '其他電子', '光電', '通信', '電機', '生技', '航運', '綠能', '雲端', '化學', '鋼鐵']
         
         for code, info in twstock.codes.items():
             if len(code) == 4 and info.type == '股票':
-                # 只要這檔股票的產業分類包含在熱門關鍵字裡面，就抓進雷達網！
                 if any(k in info.group for k in hot_keywords):
                     sym = f"{code}.TW" if info.market == '上市' else f"{code}.TWO"
                     market_tickers[sym] = (info.name, info.group)
                     
-        # 3. 把一些可能被漏掉的「超級傳產/金融權值股」硬性塞進去，確保大盤觀測不失真
         heavyweights = {
             "2881.TW": ("富邦金", "金融保險"), "2882.TW": ("國泰金", "金融保險"), "2891.TW": ("中信金", "金融保險"),
             "1301.TW": ("台塑", "塑膠工業"), "1303.TW": ("南亞", "塑膠工業"), "1216.TW": ("統一", "食品工業"),
@@ -381,7 +391,6 @@ with tab3:
         }
         market_tickers.update(heavyweights)
 
-        # 4. 把你的專屬 ETF 標上標籤
         for sym, name in etf_tuple:
             if sym not in market_tickers:
                 market_tickers[sym] = (f"{name} (我的)", "ETF")
@@ -391,7 +400,6 @@ with tab3:
         target_symbols = list(market_tickers.keys())
         
         try:
-            # 🛡️ 啟動多執行緒併發下載 (約 600~800 檔，這個數字對加上偽裝的 requests 來說非常安全)
             df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False, session=session)
         except Exception:
             return pd.DataFrame()
@@ -437,13 +445,12 @@ with tab3:
             idx_cols[0].metric(label="📈 加權指數 (集中市場)", value=f"{twii['最新報價']:,.2f}", delta=f"{twii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
         if not twoii_data.empty:
             twoii = twoii_data.iloc[0]
-            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twoii['漲跌幅 (%)']}%)", delta_color="inverse")
+            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
             
         st.divider()
         
         df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
         
-        # 🌟 盤中飆股雷達：尋找漲幅大於 4%，且成交量大於 1000 張的標的
         st.markdown("### 🚀 盤中飆股雷達 (漲幅 > 4% 且具流動性)")
         df_corp = df_stocks[df_stocks["產業別"] != "ETF"].copy()
         
