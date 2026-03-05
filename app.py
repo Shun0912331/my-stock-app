@@ -9,7 +9,7 @@ import twstock
 import warnings
 import requests
 
-# 🛡️ 終極偽裝術：把自己偽裝成一般的 Chrome 瀏覽器
+# 🛡️ 終極偽裝術 (給 Yahoo 用的)
 session = requests.Session()
 session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -17,6 +17,33 @@ session.headers.update({
 
 warnings.filterwarnings('ignore') 
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
+
+# ==========================================
+# 🔑 系統機密與 API 設定 (富果 Fugle API)
+# ==========================================
+# 系統會優先讀取 Streamlit Secrets，如果沒有，就用你提供的這組預設值
+FUGLE_API_KEY = st.secrets.get("FUGLE_API_KEY", "YWYyMmIyOTQtNzViZi00YzBjLTk3YjUtYTE0YjQ2MTNiNGUwIGNkYzQ5MWI0LTdkNGYtNGMwOC04OTJhLTBmOTJhMmUxZTFhYw==")
+
+# 專屬富果即時報價抓取函式
+def fetch_fugle_price(symbol_code, api_key):
+    if not api_key: return None, None
+    pure_code = symbol_code.split('.')[0]
+    url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
+    try:
+        # X-API-KEY 是富果官方要求的通行證格式
+        res = requests.get(url, headers={"X-API-KEY": api_key}, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            curr = data.get("lastPrice") or data.get("closePrice")
+            if not curr and data.get("lastTrade"):
+                curr = data.get("lastTrade").get("price")
+            prev = data.get("referencePrice") # 昨日收盤價
+            
+            if curr and prev:
+                return float(curr), float(prev)
+    except Exception:
+        pass
+    return None, None
 
 # ==========================================
 # 🎨 專屬介面優化：自適應表格寬度
@@ -79,7 +106,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 台股主力 800 飆股雷達與觀測站"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與基本面
+# 分頁 1：個股技術分析與基本面 (保留 Yahoo 提供歷史 10 年 K 線)
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -112,7 +139,6 @@ with tab1:
         info = {}
         df_raw = pd.DataFrame()
         
-        # 🛡️ 鈦合金裝甲：完全包覆 yf.Ticker 避免 YFDataException 核彈
         try:
             ticker_data = yf.Ticker(ticker_symbol, session=session) 
             try:
@@ -142,7 +168,6 @@ with tab1:
             st.markdown("##### 🚀 成長性 (Growth - YoY)")
             st.metric("營收成長率 (季對季YoY)", fmt_pct(info.get('revenueGrowth')))
             st.metric("稅後淨利成長率 (季對季YoY)", fmt_pct(info.get('earningsGrowth')))
-            st.markdown("*(註：國際資料庫無提供台股獨有之「月營收 MoM」數據，此處為季度比較。)*")
             
         with col_f3:
             st.markdown("##### ⚖️ 估值與其他")
@@ -258,12 +283,14 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
 
 # ----------------------------------------
-# 分頁 2：我的投資組合 (損益追蹤)
+# 🌟 分頁 2：我的投資組合 (已升級為富果 API 零時差引擎)
 # ----------------------------------------
 with tab2:
+    st.info("⚡ 本頁面已全面切換至『富果 Fugle 零時差即時 API』，享受盤中無延遲看盤體驗！")
+    
     if MY_PORTFOLIO:
         portfolio_data = []
-        my_bar = st.progress(0, text="正在為您結算持股最新報價...")
+        my_bar = st.progress(0, text="⚡ 正在透過富果光纖 API 抓取您的持股即時報價...")
         for i, info in enumerate(MY_PORTFOLIO):
             symbol = info['symbol']
             cost = info['cost']
@@ -271,17 +298,27 @@ with tab2:
             stock_name = info['name']
             category = info['category']
             
-            try:
-                tick = yf.Ticker(symbol, session=session)
-                hist = tick.history(period="5d")
-            except Exception:
-                hist = pd.DataFrame()
+            current_price = None
+            prev_price = None
             
-            if not hist.empty:
-                current_price = hist['Close'].iloc[-1]
-                if len(hist) >= 2: prev_price = hist['Close'].iloc[-2]
-                else: prev_price = current_price
-                
+            # 🚀 第一優先：使用富果 API (零時差)
+            f_curr, f_prev = fetch_fugle_price(symbol, FUGLE_API_KEY)
+            if f_curr and f_prev:
+                current_price = f_curr
+                prev_price = f_prev
+            else:
+                # 🛡️ 第二道防線：如果富果呼叫失敗 (或超過 60次/分 限制)，自動切換回 Yahoo 備用引擎
+                try:
+                    tick = yf.Ticker(symbol, session=session)
+                    hist = tick.history(period="5d")
+                    if not hist.empty:
+                        current_price = float(hist['Close'].iloc[-1])
+                        if len(hist) >= 2: prev_price = float(hist['Close'].iloc[-2])
+                        else: prev_price = current_price
+                except Exception:
+                    pass
+            
+            if current_price is not None and prev_price is not None:
                 daily_price_diff = current_price - prev_price
                 daily_pct_diff = (daily_price_diff / prev_price) * 100 if prev_price > 0 else 0
                 daily_profit_diff = daily_price_diff * shares
@@ -306,7 +343,7 @@ with tab2:
                     "總成本": true_stock_cost, "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0), "報酬率 (%)": round(roi, 1) 
                 })
-            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="正在為您結算持股最新報價...")
+            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="⚡ 正在透過富果光纖 API 抓取您的持股即時報價...")
         my_bar.empty()
         
         grouped_data = {}
@@ -349,13 +386,15 @@ with tab2:
                 st.table(styled_table)
             
             st.divider() 
+    else:
+        st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站
+# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站 (繼續使用 Yahoo 批次引擎)
 # ----------------------------------------
 with tab3:
     st.subheader("🌍 台股主力 800 飆股雷達與產業觀測站")
-    st.warning("⏱️ 溫馨提示：系統已升級為『智能產業濾網』，自動鎖定半導體、AI週邊、生技、重電等最容易出飆股的 12 大熱門板塊 (約涵蓋 600~800 檔活躍股)，在保證伺服器不被封鎖的前提下，給您最大的火力覆蓋！")
+    st.warning("⏱️ 溫馨提示：為突破 API 限制，此頁面由 Yahoo 批次引擎提供火力支援（可能有 15 分鐘延遲），每 30 分鐘自動重整，掃描台股最容易出飆股的 12 大熱門板塊！")
     
     user_etf_dict = {}
     for p in MY_PORTFOLIO:
@@ -363,7 +402,6 @@ with tab3:
             user_etf_dict[p['symbol']] = p['name']
     user_etfs = tuple(user_etf_dict.items())
     
-    # 🛡️ 鈦合金裝甲：完全包覆快取函式，確保絕不將錯誤拋出給 Streamlit 導致當機
     @st.cache_data(ttl=1800) 
     def get_smart_market_data(etf_tuple):
         try:
@@ -407,7 +445,6 @@ with tab3:
                 
             data_list = []
             
-            # 🛡️ 防禦資料結構變異：確保即使 yfinance 回傳平坦的 DataFrame 也不會當機
             if isinstance(df_dl.columns, pd.MultiIndex):
                 available_symbols = df_dl.columns.levels[0]
             else:
@@ -416,7 +453,6 @@ with tab3:
             for sym in target_symbols:
                 try:
                     if sym in available_symbols:
-                        # 處理 MultiIndex 或平坦 Index 的差異
                         if isinstance(df_dl.columns, pd.MultiIndex):
                             hist = df_dl[sym].dropna()
                         else:
@@ -460,7 +496,7 @@ with tab3:
             idx_cols[0].metric(label="📈 加權指數 (集中市場)", value=f"{twii['最新報價']:,.2f}", delta=f"{twii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
         if not twoii_data.empty:
             twoii = twoii_data.iloc[0]
-            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twoii['漲跌幅 (%)']}%)", delta_color="inverse")
+            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
             
         st.divider()
         
