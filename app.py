@@ -109,14 +109,24 @@ with tab1:
     st.markdown("---")
     
     if ticker_symbol:
-        ticker_data = yf.Ticker(ticker_symbol, session=session) 
+        info = {}
+        df_raw = pd.DataFrame()
+        
+        # 🛡️ 鈦合金裝甲：完全包覆 yf.Ticker 避免 YFDataException 核彈
+        try:
+            ticker_data = yf.Ticker(ticker_symbol, session=session) 
+            try:
+                info = ticker_data.info
+            except Exception:
+                st.warning("⚠️ Yahoo 財經目前限制基本面讀取，請專注於下方技術線圖。")
+            try:
+                df_raw = ticker_data.history(period="10y")
+            except Exception:
+                st.error("⚠️ 無法取得 K 線報價資料，請稍後再試。")
+        except Exception:
+            st.error("⚠️ Yahoo 財經伺服器阻擋了此股票的連線要求，請稍後再重整頁面。")
         
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
-        info = {}
-        try:
-            info = ticker_data.info
-        except Exception:
-            st.warning("⚠️ Yahoo 財經目前限制基本面讀取，請專注於下方技術線圖。")
             
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
@@ -156,12 +166,6 @@ with tab1:
         with col_ctrl3:
             ind_options = ["成交量", "KD", "MACD", "RSI"]
             selected_inds = st.multiselect("📉 附圖指標 (可複選)", ind_options, default=["成交量", "KD", "MACD"])
-            
-        df_raw = pd.DataFrame()
-        try:
-            df_raw = ticker_data.history(period="10y")
-        except Exception:
-            st.error("⚠️ 無法取得 K 線報價資料，請稍後再試。")
         
         if not df_raw.empty:
             df_raw.index = df_raw.index.tz_localize(None)
@@ -207,8 +211,6 @@ with tab1:
             fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
             
             fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], increasing_line_color='#FF4B4B', decreasing_line_color='#00D26A', name='K線'), row=1, col=1)
-            
-            # 🌟 升級解鎖：移除 fixedrange=True，讓雙指可以自由縮放 K 線，但依然保留 0 軸防護
             fig.update_yaxes(rangemode='nonnegative', row=1, col=1)
             
             for ma_col, color in ma_lines.items():
@@ -235,12 +237,10 @@ with tab1:
                 if ind == "成交量":
                     vol_colors = ['#FF4B4B' if row['Close'] >= row['Open'] else '#00D26A' for i, row in df_plot.iterrows()]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=vol_colors, name='成交量'), row=current_row, col=1)
-                    # 🌟 升級解鎖：移除 fixedrange=True
                     fig.update_yaxes(rangemode='nonnegative', row=current_row, col=1)
                 elif ind == "KD":
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['K'], name='K值', line=dict(color='#00BFFF')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['D'], name='D值', line=dict(color='#FFA500')), row=current_row, col=1)
-                    # 🌟 升級解鎖：只保留範圍 0~100 的初始設定，移除強硬封印
                     fig.update_yaxes(range=[0, 100], row=current_row, col=1)
                 elif ind == "MACD":
                     macd_colors = ['#FF4B4B' if v > 0 else '#00D26A' for v in df_plot['MACD_hist']]
@@ -251,7 +251,6 @@ with tab1:
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#9932CC')), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[70]*len(df_plot), line=dict(color='#FF4B4B', dash='dash'), showlegend=False), row=current_row, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=[30]*len(df_plot), line=dict(color='#00D26A', dash='dash'), showlegend=False), row=current_row, col=1)
-                    # 🌟 升級解鎖：只保留範圍 0~100 的初始設定，移除強硬封印
                     fig.update_yaxes(range=[0, 100], row=current_row, col=1)
                 current_row += 1
                 
@@ -364,73 +363,89 @@ with tab3:
             user_etf_dict[p['symbol']] = p['name']
     user_etfs = tuple(user_etf_dict.items())
     
+    # 🛡️ 鈦合金裝甲：完全包覆快取函式，確保絕不將錯誤拋出給 Streamlit 導致當機
     @st.cache_data(ttl=1800) 
     def get_smart_market_data(etf_tuple):
-        market_tickers = {
-            "^TWII": ("加權指數", "大盤"), "^TWOII": ("櫃買指數", "大盤")
-        }
-        
-        classic_etfs = ["0050.TW", "0056.TW", "00878.TW", "00881.TW", "0055.TW", "00929.TW", "00919.TW", "00713.TW"]
-        for c_etf in classic_etfs:
-            name = twstock.codes[c_etf.replace(".TW", "")].name if c_etf.replace(".TW", "") in twstock.codes else c_etf
-            market_tickers[c_etf] = (name, "ETF")
-
-        hot_keywords = ['半導體', '電腦', '電子零組件', '其他電子', '光電', '通信', '電機', '生技', '航運', '綠能', '雲端', '化學', '鋼鐵']
-        
-        for code, info in twstock.codes.items():
-            if len(code) == 4 and info.type == '股票':
-                if any(k in info.group for k in hot_keywords):
-                    sym = f"{code}.TW" if info.market == '上市' else f"{code}.TWO"
-                    market_tickers[sym] = (info.name, info.group)
-                    
-        heavyweights = {
-            "2881.TW": ("富邦金", "金融保險"), "2882.TW": ("國泰金", "金融保險"), "2891.TW": ("中信金", "金融保險"),
-            "1301.TW": ("台塑", "塑膠工業"), "1303.TW": ("南亞", "塑膠工業"), "1216.TW": ("統一", "食品工業"),
-            "2886.TW": ("兆豐金", "金融保險"), "2884.TW": ("玉山金", "金融保險"), "2892.TW": ("第一金", "金融保險"),
-            "2207.TW": ("和泰車", "汽車工業"), "1101.TW": ("台泥", "水泥工業"), "9904.TW": ("寶成", "其他業")
-        }
-        market_tickers.update(heavyweights)
-
-        for sym, name in etf_tuple:
-            if sym not in market_tickers:
-                market_tickers[sym] = (f"{name} (我的)", "ETF")
-            elif "(我的)" not in market_tickers[sym][0]:
-                market_tickers[sym] = (f"{market_tickers[sym][0]} (我的)", "ETF")
-
-        target_symbols = list(market_tickers.keys())
-        
         try:
-            df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False, session=session)
+            market_tickers = {
+                "^TWII": ("加權指數", "大盤"), "^TWOII": ("櫃買指數", "大盤")
+            }
+            
+            classic_etfs = ["0050.TW", "0056.TW", "00878.TW", "00881.TW", "0055.TW", "00929.TW", "00919.TW", "00713.TW"]
+            for c_etf in classic_etfs:
+                name = twstock.codes[c_etf.replace(".TW", "")].name if c_etf.replace(".TW", "") in twstock.codes else c_etf
+                market_tickers[c_etf] = (name, "ETF")
+
+            hot_keywords = ['半導體', '電腦', '電子零組件', '其他電子', '光電', '通信', '電機', '生技', '航運', '綠能', '雲端', '化學', '鋼鐵']
+            
+            for code, info in twstock.codes.items():
+                if len(code) == 4 and info.type == '股票':
+                    if any(k in info.group for k in hot_keywords):
+                        sym = f"{code}.TW" if info.market == '上市' else f"{code}.TWO"
+                        market_tickers[sym] = (info.name, info.group)
+                        
+            heavyweights = {
+                "2881.TW": ("富邦金", "金融保險"), "2882.TW": ("國泰金", "金融保險"), "2891.TW": ("中信金", "金融保險"),
+                "1301.TW": ("台塑", "塑膠工業"), "1303.TW": ("南亞", "塑膠工業"), "1216.TW": ("統一", "食品工業"),
+                "2886.TW": ("兆豐金", "金融保險"), "2884.TW": ("玉山金", "金融保險"), "2892.TW": ("第一金", "金融保險"),
+                "2207.TW": ("和泰車", "汽車工業"), "1101.TW": ("台泥", "水泥工業"), "9904.TW": ("寶成", "其他業")
+            }
+            market_tickers.update(heavyweights)
+
+            for sym, name in etf_tuple:
+                if sym not in market_tickers:
+                    market_tickers[sym] = (f"{name} (我的)", "ETF")
+                elif "(我的)" not in market_tickers[sym][0]:
+                    market_tickers[sym] = (f"{market_tickers[sym][0]} (我的)", "ETF")
+
+            target_symbols = list(market_tickers.keys())
+            
+            try:
+                df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False, session=session)
+            except Exception:
+                return pd.DataFrame()
+                
+            data_list = []
+            
+            # 🛡️ 防禦資料結構變異：確保即使 yfinance 回傳平坦的 DataFrame 也不會當機
+            if isinstance(df_dl.columns, pd.MultiIndex):
+                available_symbols = df_dl.columns.levels[0]
+            else:
+                available_symbols = [sym for sym in target_symbols if sym in df_dl.columns]
+                
+            for sym in target_symbols:
+                try:
+                    if sym in available_symbols:
+                        # 處理 MultiIndex 或平坦 Index 的差異
+                        if isinstance(df_dl.columns, pd.MultiIndex):
+                            hist = df_dl[sym].dropna()
+                        else:
+                            hist = df_dl.dropna()
+                            
+                        if len(hist) >= 2:
+                            curr = float(hist['Close'].iloc[-1])
+                            prev = float(hist['Close'].iloc[-2])
+                            vol = float(hist['Volume'].iloc[-1])
+                            
+                            diff = curr - prev
+                            pct = (diff / prev) * 100 if prev > 0 else 0
+                            
+                            data_list.append({
+                                "代號": sym.replace(".TW", "").replace(".TWO", ""),
+                                "名稱": market_tickers[sym][0],
+                                "產業別": market_tickers[sym][1], 
+                                "最新報價": round(curr, 2),
+                                "漲跌點數": round(diff, 2),
+                                "漲跌幅 (%)": round(pct, 2),
+                                "成交量 (張)": round(vol / 1000, 0) if not sym.startswith("^") else "大盤總量" 
+                            })
+                except Exception:
+                    pass
+                    
+            return pd.DataFrame(data_list)
         except Exception:
             return pd.DataFrame()
             
-        data_list = []
-        for sym in target_symbols:
-            try:
-                if sym in df_dl.columns.levels[0]:
-                    hist = df_dl[sym].dropna()
-                    if len(hist) >= 2:
-                        curr = float(hist['Close'].iloc[-1])
-                        prev = float(hist['Close'].iloc[-2])
-                        vol = float(hist['Volume'].iloc[-1])
-                        
-                        diff = curr - prev
-                        pct = (diff / prev) * 100 if prev > 0 else 0
-                        
-                        data_list.append({
-                            "代號": sym.replace(".TW", "").replace(".TWO", ""),
-                            "名稱": market_tickers[sym][0],
-                            "產業別": market_tickers[sym][1], 
-                            "最新報價": round(curr, 2),
-                            "漲跌點數": round(diff, 2),
-                            "漲跌幅 (%)": round(pct, 2),
-                            "成交量 (張)": round(vol / 1000, 0) if not sym.startswith("^") else "大盤總量" 
-                        })
-            except Exception:
-                pass
-                
-        return pd.DataFrame(data_list)
-        
     with st.spinner("📡 系統啟動智能產業濾網，正對台股 800 大活躍飆股進行無死角掃描... (約需 10 秒)"):
         df_market = get_smart_market_data(user_etfs)
     
@@ -445,7 +460,7 @@ with tab3:
             idx_cols[0].metric(label="📈 加權指數 (集中市場)", value=f"{twii['最新報價']:,.2f}", delta=f"{twii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
         if not twoii_data.empty:
             twoii = twoii_data.iloc[0]
-            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
+            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twoii['漲跌幅 (%)']}%)", delta_color="inverse")
             
         st.divider()
         
