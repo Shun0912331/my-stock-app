@@ -8,7 +8,7 @@ from ta.trend import MACD
 import twstock
 import warnings
 
-warnings.filterwarnings('ignore') # 隱藏 yfinance 偶爾出現的底層警告
+warnings.filterwarnings('ignore') 
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
 # ==========================================
@@ -105,8 +105,14 @@ with tab1:
         ticker_data = yf.Ticker(ticker_symbol)
         
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
-        info = ticker_data.info
         
+        # 🛡️ 防彈裝甲 1：攔截 info 基本面財報的 Rate Limit 阻擋
+        info = {}
+        try:
+            info = ticker_data.info
+        except Exception as e:
+            st.warning("⚠️ Yahoo 財經目前正啟動防爬蟲流量限制 (Rate Limit)，基本面資料暫時無法取得，請稍後再試。")
+            
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             st.markdown("##### 💰 獲利能力 (Profitability)")
@@ -146,7 +152,12 @@ with tab1:
             ind_options = ["成交量", "KD", "MACD", "RSI"]
             selected_inds = st.multiselect("📉 附圖指標 (可複選)", ind_options, default=["成交量", "KD", "MACD"])
             
-        df_raw = ticker_data.history(period="10y")
+        # 🛡️ 防彈裝甲 2：攔截 K 線資料的錯誤
+        df_raw = pd.DataFrame()
+        try:
+            df_raw = ticker_data.history(period="10y")
+        except Exception as e:
+            st.error("⚠️ 無法取得 K 線報價資料，Yahoo 財經伺服器拒絕連線，請稍後再試。")
         
         if not df_raw.empty:
             df_raw.index = df_raw.index.tz_localize(None)
@@ -238,8 +249,6 @@ with tab1:
                 
             fig.update_layout(xaxis_rangeslider_visible=False, height=400 + 150 * len(selected_inds), margin=dict(l=10, r=10, t=80, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0.01), dragmode='pan')
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
-        else:
-            st.error("找不到該股票資料，可能是代號錯誤或系統連線異常。")
 
 # ----------------------------------------
 # 分頁 2：我的投資組合 (損益追蹤)
@@ -254,8 +263,13 @@ with tab2:
             shares = info['shares']
             stock_name = info['name']
             category = info['category']
-            tick = yf.Ticker(symbol)
-            hist = tick.history(period="5d")
+            
+            # 🛡️ 防彈裝甲 3：保護個人投資組合報價
+            try:
+                tick = yf.Ticker(symbol)
+                hist = tick.history(period="5d")
+            except Exception:
+                hist = pd.DataFrame()
             
             if not hist.empty:
                 current_price = hist['Close'].iloc[-1]
@@ -334,11 +348,11 @@ with tab2:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：台股全市場飆股雷達與觀測站 (終極全掃描版)
+# 🌟 分頁 3：台股全市場飆股雷達與觀測站
 # ----------------------------------------
 with tab3:
     st.subheader("🌍 台股全市場飆股雷達與產業觀測站")
-    st.warning("⏱️ 溫馨提示：本頁面資料每 30 分鐘自動更新一次。系統已導入全自動雷達，掃描台股近 1800 檔上市櫃股票，完全排除主觀選股偏見。")
+    st.warning("⏱️ 溫馨提示：本頁面資料每 30 分鐘自動更新一次。系統已導入全自動雷達，掃描台股近 1800 檔上市櫃股票。")
     
     user_etf_dict = {}
     for p in MY_PORTFOLIO:
@@ -346,7 +360,6 @@ with tab3:
             user_etf_dict[p['symbol']] = p['name']
     user_etfs = tuple(user_etf_dict.items())
     
-    # 🌟 設定 TTL 為 1800 秒，並使用 yf.download 實現「加特林機槍」式的全市場併發抓取
     @st.cache_data(ttl=1800) 
     def get_full_market_data(etf_tuple):
         target_symbols = ["^TWII", "^TWOII"]
@@ -355,14 +368,12 @@ with tab3:
             "^TWOII": ("櫃買指數 (中小型)", "大盤")
         }
         
-        # 1. 呼叫 twstock 的官方清單，抓出所有上市櫃的「純股票」代號及產業別 (包含力積電 6770)
         for code, info in twstock.codes.items():
             if len(code) == 4 and info.type == '股票':
                 sym = f"{code}.TW" if info.market == '上市' else f"{code}.TWO"
                 target_symbols.append(sym)
                 stock_map[sym] = (info.name, info.group)
                 
-        # 2. 確保使用者的 ETF 有被加進去比較
         for sym, name in etf_tuple:
             if sym not in target_symbols:
                 target_symbols.append(sym)
@@ -370,7 +381,6 @@ with tab3:
             elif "(我的持股)" not in stock_map[sym][0]:
                 stock_map[sym] = (f"{stock_map[sym][0]} (我的持股)", "ETF")
                 
-        # 為了避免特殊 ETF 沒抓到，加上經典 ETF 保底
         classic_etfs = ["0050.TW", "0056.TW", "00878.TW", "00881.TW", "0055.TW"]
         for c_etf in classic_etfs:
             if c_etf not in target_symbols:
@@ -378,14 +388,15 @@ with tab3:
                 name = twstock.codes[c_etf.replace(".TW", "")].name if c_etf.replace(".TW", "") in twstock.codes else c_etf
                 stock_map[c_etf] = (name, "ETF")
 
-        # 3. 啟動多執行緒併發下載 (yfinance 會在 10~20 秒內抓完全部 1800 檔！)
-        df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False)
-        
+        # 🛡️ 防彈裝甲 4：包裝大範圍下載的錯誤攔截
+        try:
+            df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False)
+        except Exception:
+            return pd.DataFrame()
+            
         data_list = []
-        # 4. 解析龐大的下載資料表
         for sym in target_symbols:
             try:
-                # 確保這檔股票沒有下市且抓得到資料
                 if sym in df_dl.columns.levels[0]:
                     hist = df_dl[sym].dropna()
                     if len(hist) >= 2:
@@ -430,11 +441,9 @@ with tab3:
         
         df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
         
-        # 🌟 真正客觀的全市場飆股雷達 (過濾全台灣漲幅 > 5% 的強勢股，並排除成交量太小的冷門股)
         st.markdown("### 🚀 盤中飆股雷達 (全市場掃描：漲幅 > 5% 且具備流動性)")
         df_corp = df_stocks[df_stocks["產業別"] != "ETF"].copy()
         
-        # 條件：漲幅超過 5% 且成交量大於 1000 張 (排除死魚股)
         df_soaring = df_corp[(df_corp["漲跌幅 (%)"] >= 5.0) & (df_corp["成交量 (張)"] != "大盤總量") & (pd.to_numeric(df_corp["成交量 (張)"], errors='coerce') >= 1000)]
         df_soaring = df_soaring.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
         
@@ -450,7 +459,7 @@ with tab3:
         
         st.markdown("### 🏢 產業板塊與主題表現 (含專屬持股)")
         df_etf = df_stocks[df_stocks["產業別"] == "ETF"].copy()
-        df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False).head(30) # 顯示前 30 大 ETF
+        df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False).head(30) 
         df_etf.index = range(1, len(df_etf) + 1)
         st.table(df_etf[["名稱", "最新報價", "漲跌點數", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌點數", "漲跌幅 (%)"]).format({
             "最新報價": "{:.2f}", "漲跌點數": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
@@ -460,7 +469,6 @@ with tab3:
         
         st.markdown("### 🔥 全市場資金焦點戰況 (Top 30)")
         
-        # 確保成交量是數字才能排序
         df_corp["成交量 (張)"] = pd.to_numeric(df_corp["成交量 (張)"], errors='coerce').fillna(0)
         top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
         
@@ -477,7 +485,6 @@ with tab3:
         with col_c2:
             st.markdown("#### 📊 各大產業板塊平均漲跌幅 (全市場統計)")
             sector_perf = df_corp.groupby("產業別")["漲跌幅 (%)"].mean().reset_index()
-            # 過濾掉可能只有零星幾檔的超冷門產業，取前 15 大動能產業
             sector_perf = sector_perf.sort_values(by="漲跌幅 (%)", ascending=False).head(15)
             
             fig_bar = go.Figure(data=[go.Bar(
@@ -494,7 +501,6 @@ with tab3:
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("#### 🏆 全市場強勢領漲排行 (排除低量股)")
-            # 必須有流動性 (大於 1000 張) 才配稱為真正的領漲
             valid_gainers = df_corp[df_corp["成交量 (張)"] >= 1000]
             top_gainers = valid_gainers.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
             top_gainers.index = range(1, len(top_gainers) + 1)
@@ -512,4 +518,4 @@ with tab3:
         st.table(top_vol[["產業別", "名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
         
     else:
-        st.error("暫時無法取得大盤資料，請稍後再試。")
+        st.error("⚠️ 暫時無法取得大盤資料 (可能因 Yahoo 流量管制)，請稍後再重整頁面。")
