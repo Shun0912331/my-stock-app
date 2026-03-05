@@ -19,12 +19,11 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="帥順股市分析與資產管理神器", layout="wide")
 
 # ==========================================
-# 🔑 系統機密與 API 設定 (富果 Fugle API)
+# 🔑 系統機密與 API 設定
 # ==========================================
 FUGLE_API_KEY = st.secrets.get("FUGLE_API_KEY", "YWYyMmIyOTQtNzViZi00YzBjLTk3YjUtYTE0YjQ2MTNiNGUwIGNkYzQ5MWI0LTdkNGYtNGMwOC04OTJhLTBmOTJhMmUxZTFhYw==")
 
 def fetch_fugle_price(symbol_code, api_key):
-    """抓取富果簡單報價 (用於第二頁投資組合)"""
     if not api_key: return None, None
     pure_code = symbol_code.split('.')[0]
     url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
@@ -41,7 +40,6 @@ def fetch_fugle_price(symbol_code, api_key):
     return None, None
 
 def fetch_fugle_kline_today(symbol_code, api_key):
-    """抓取富果完整 OHLCV 報價 (用於第一頁 K 線圖融合)"""
     if not api_key: return None
     pure_code = symbol_code.split('.')[0]
     url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
@@ -56,10 +54,31 @@ def fetch_fugle_kline_today(symbol_code, api_key):
             l = data.get("lowPrice") or c
             v = data.get("total", {}).get("tradeVolume", 0)
             if c:
-                # 富果的成交量單位是「張」，Yahoo 單位是「股」，所以這裡 * 1000 同步單位
                 return {"Open": float(o), "High": float(h), "Low": float(l), "Close": float(c), "Volume": v * 1000}
     except Exception: pass
     return None
+
+# 🌟 新增備用資料庫：FinMind 台灣開源量化 API (免金鑰)
+def fetch_finmind_history(symbol_code):
+    pure_code = symbol_code.split('.')[0]
+    # 抓取過去 5 年的資料來算均線
+    start_date = (pd.Timestamp.now() - pd.Timedelta(days=1825)).strftime('%Y-%m-%d')
+    url = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id={pure_code}&start_date={start_date}"
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("msg") == "success" and len(data.get("data", [])) > 0:
+                df = pd.DataFrame(data["data"])
+                df["date"] = pd.to_datetime(df["date"])
+                df.set_index("date", inplace=True)
+                df.rename(columns={
+                    "open": "Open", "max": "High", "min": "Low", 
+                    "close": "Close", "Trading_Volume": "Volume"
+                }, inplace=True)
+                return df[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception: pass
+    return pd.DataFrame()
 
 # ==========================================
 # 🎨 專屬介面優化
@@ -95,7 +114,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 台股主力 800 飆股雷達與觀測站"])
 
 # ----------------------------------------
-# 🌟 分頁 1：個股技術分析與基本面 (導入富果即時 K 線融合技術)
+# 🌟 分頁 1：個股技術分析 (備援機制版)
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -117,26 +136,37 @@ with tab1:
     st.markdown("---")
     if ticker_symbol:
         info, df_raw = {}, pd.DataFrame()
+        source_label = ""
         
-        # 先抓取 Yahoo 歷史資料與基本面
+        # 1️⃣ 嘗試取得 Yahoo 歷史資料與基本面
         try:
             ticker_data = yf.Ticker(ticker_symbol, session=session) 
             try: info = ticker_data.info
             except Exception: pass
-            try: df_raw = ticker_data.history(period="10y")
-            except Exception: st.error("⚠️ 無法取得歷史 K 線報價資料，請稍後再試。")
-        except Exception: st.error("⚠️ Yahoo 財經伺服器阻擋連線要求，請稍後重整。")
+            try: 
+                df_raw = ticker_data.history(period="10y")
+                if not df_raw.empty: source_label = "Yahoo 財經"
+            except Exception: pass
+        except Exception: pass
         
-        # ⚡ 富果魔法：抓取零時差的今日 OHLCV
+        # 2️⃣ 如果 Yahoo 當機，自動切換至第二來源 FinMind
+        if df_raw.empty:
+            df_raw = fetch_finmind_history(ticker_symbol)
+            if not df_raw.empty: source_label = "FinMind 開源庫"
+            
+        # 3️⃣ 抓取富果最新報價準備融合
         fugle_today = fetch_fugle_kline_today(ticker_symbol, FUGLE_API_KEY)
         
-        st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
+        st.subheader(f"🏢 **{display_name}** - 基本面與財務指標")
         
-        # 顯示富果即時報價提醒
-        if fugle_today:
-            st.success(f"⚡ 已成功啟用富果 (Fugle) 零時差報價引擎，目前最新股價：**{fugle_today['Close']}**，技術線圖與指標皆為最即時狀態！")
-        elif not df_raw.empty:
-            st.info("💡 目前顯示為 Yahoo 延遲報價。")
+        # 狀態燈號顯示
+        if df_raw.empty:
+            st.error("⚠️ 無法取得歷史 K 線報價 (所有來源皆無回應)，請檢查股票代號或稍後再試。")
+        else:
+            if fugle_today:
+                st.success(f"⚡ 已啟用富果零時差即時報價！(歷史資料來源：{source_label})")
+            else:
+                st.info(f"💡 目前顯示為 {source_label} 延遲報價。")
             
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
@@ -165,27 +195,27 @@ with tab1:
             selected_inds = st.multiselect("📉 附圖指標 (可複選)", ["成交量", "KD", "MACD", "RSI"], default=["成交量", "KD", "MACD"])
         
         if not df_raw.empty:
-            df_raw.index = df_raw.index.tz_localize(None)
+            # 確保時區正確，以防 Yahoo 與 FinMind 時區格式不同
+            try: df_raw.index = df_raw.index.tz_localize(None)
+            except TypeError: pass 
             
-            # ⚡ 歷史與即時的完美融合 (Data Fusion)
+            # ⚡ 歷史與即時的無縫接軌
             if fugle_today and tf_option == "日線":
                 last_date = df_raw.index[-1].date()
                 today_date = pd.Timestamp.now('Asia/Taipei').date()
                 
                 if last_date == today_date:
-                    # 如果 Yahoo 已經有今天的格子，直接覆蓋成富果的最精準數字
                     df_raw.iloc[-1, df_raw.columns.get_loc('Open')] = fugle_today['Open']
                     df_raw.iloc[-1, df_raw.columns.get_loc('High')] = fugle_today['High']
                     df_raw.iloc[-1, df_raw.columns.get_loc('Low')] = fugle_today['Low']
                     df_raw.iloc[-1, df_raw.columns.get_loc('Close')] = fugle_today['Close']
                     df_raw.iloc[-1, df_raw.columns.get_loc('Volume')] = fugle_today['Volume']
                 else:
-                    # 如果 Yahoo 還沒生成今天的格子，我們幫它無縫接軌新增一格
                     new_row = pd.DataFrame({
                         'Open': [fugle_today['Open']], 'High': [fugle_today['High']], 
                         'Low': [fugle_today['Low']], 'Close': [fugle_today['Close']], 
                         'Volume': [fugle_today['Volume']]
-                    }, index=[pd.Timestamp.now('Asia/Taipei')])
+                    }, index=[pd.to_datetime(today_date)])
                     df_raw = pd.concat([df_raw, new_row])
             
             if tf_option == "日線": df = df_raw.copy()
@@ -264,7 +294,7 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
 
 # ----------------------------------------
-# 🌟 分頁 2：我的投資組合
+# 分頁 2：我的投資組合 
 # ----------------------------------------
 with tab2:
     col_info, col_toggle = st.columns([2, 1])
