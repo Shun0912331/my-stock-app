@@ -8,6 +8,7 @@ from ta.trend import MACD
 import twstock
 import warnings
 import requests
+import time
 
 # 🛡️ 終極偽裝術 (給 Yahoo 用的)
 session = requests.Session()
@@ -21,23 +22,20 @@ st.set_page_config(page_title="帥順股市分析與資產管理神器", layout=
 # ==========================================
 # 🔑 系統機密與 API 設定 (富果 Fugle API)
 # ==========================================
-# 系統會優先讀取 Streamlit Secrets，如果沒有，就用你提供的這組預設值
 FUGLE_API_KEY = st.secrets.get("FUGLE_API_KEY", "YWYyMmIyOTQtNzViZi00YzBjLTk3YjUtYTE0YjQ2MTNiNGUwIGNkYzQ5MWI0LTdkNGYtNGMwOC04OTJhLTBmOTJhMmUxZTFhYw==")
 
-# 專屬富果即時報價抓取函式
 def fetch_fugle_price(symbol_code, api_key):
     if not api_key: return None, None
     pure_code = symbol_code.split('.')[0]
     url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
     try:
-        # X-API-KEY 是富果官方要求的通行證格式
         res = requests.get(url, headers={"X-API-KEY": api_key}, timeout=5)
         if res.status_code == 200:
             data = res.json()
             curr = data.get("lastPrice") or data.get("closePrice")
             if not curr and data.get("lastTrade"):
                 curr = data.get("lastTrade").get("price")
-            prev = data.get("referencePrice") # 昨日收盤價
+            prev = data.get("referencePrice")
             
             if curr and prev:
                 return float(curr), float(prev)
@@ -106,7 +104,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 台股主力 800 飆股雷達與觀測站"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與基本面 (保留 Yahoo 提供歷史 10 年 K 線)
+# 分頁 1：個股技術分析與基本面
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -283,14 +281,24 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
 
 # ----------------------------------------
-# 🌟 分頁 2：我的投資組合 (已升級為富果 API 零時差引擎)
+# 🌟 分頁 2：我的投資組合 (加入自動更新機制)
 # ----------------------------------------
 with tab2:
-    st.info("⚡ 本頁面已全面切換至『富果 Fugle 零時差即時 API』，享受盤中無延遲看盤體驗！")
+    # 建立橫向排版：左邊是提示文字，右邊是自動更新開關
+    col_info, col_toggle = st.columns([2, 1])
+    with col_info:
+        st.info("⚡ 本頁面採用『富果 Fugle 零時差即時 API』，享受盤中無延遲看盤體驗！")
+    with col_toggle:
+        # 🌟 盤中自動掛機洗盤的靈魂開關
+        auto_refresh = st.toggle("🔄 盤中自動更新 (每 60 秒)", value=False)
     
     if MY_PORTFOLIO:
         portfolio_data = []
-        my_bar = st.progress(0, text="⚡ 正在透過富果光纖 API 抓取您的持股即時報價...")
+        
+        # 加上時間戳記，讓你知道資料是幾點幾分更新的
+        current_time_str = pd.Timestamp.now('Asia/Taipei').strftime('%Y-%m-%d %H:%M:%S')
+        my_bar = st.progress(0, text=f"⚡ [{current_time_str}] 正在透過富果光纖 API 抓取您的持股即時報價...")
+        
         for i, info in enumerate(MY_PORTFOLIO):
             symbol = info['symbol']
             cost = info['cost']
@@ -301,13 +309,11 @@ with tab2:
             current_price = None
             prev_price = None
             
-            # 🚀 第一優先：使用富果 API (零時差)
             f_curr, f_prev = fetch_fugle_price(symbol, FUGLE_API_KEY)
             if f_curr and f_prev:
                 current_price = f_curr
                 prev_price = f_prev
             else:
-                # 🛡️ 第二道防線：如果富果呼叫失敗 (或超過 60次/分 限制)，自動切換回 Yahoo 備用引擎
                 try:
                     tick = yf.Ticker(symbol, session=session)
                     hist = tick.history(period="5d")
@@ -343,7 +349,7 @@ with tab2:
                     "總成本": true_stock_cost, "目前市值": round(stock_value_raw, 2),
                     "淨損益": round(true_profit, 0), "報酬率 (%)": round(roi, 1) 
                 })
-            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text="⚡ 正在透過富果光纖 API 抓取您的持股即時報價...")
+            my_bar.progress((i + 1) / len(MY_PORTFOLIO), text=f"⚡ [{current_time_str}] 正在透過富果光纖 API 抓取您的持股即時報價...")
         my_bar.empty()
         
         grouped_data = {}
@@ -390,193 +396,6 @@ with tab2:
         st.info("尚未從試算表讀取到持股資料。請確認您的試算表 A、B、C 欄有正確輸入內容。")
 
 # ----------------------------------------
-# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站 (繼續使用 Yahoo 批次引擎)
+# 🌟 分頁 3：台股主力 800 飆股雷達與觀測站
 # ----------------------------------------
-with tab3:
-    st.subheader("🌍 台股主力 800 飆股雷達與產業觀測站")
-    st.warning("⏱️ 溫馨提示：為突破 API 限制，此頁面由 Yahoo 批次引擎提供火力支援（可能有 15 分鐘延遲），每 30 分鐘自動重整，掃描台股最容易出飆股的 12 大熱門板塊！")
-    
-    user_etf_dict = {}
-    for p in MY_PORTFOLIO:
-        if str(p['symbol']).startswith("00"):
-            user_etf_dict[p['symbol']] = p['name']
-    user_etfs = tuple(user_etf_dict.items())
-    
-    @st.cache_data(ttl=1800) 
-    def get_smart_market_data(etf_tuple):
-        try:
-            market_tickers = {
-                "^TWII": ("加權指數", "大盤"), "^TWOII": ("櫃買指數", "大盤")
-            }
-            
-            classic_etfs = ["0050.TW", "0056.TW", "00878.TW", "00881.TW", "0055.TW", "00929.TW", "00919.TW", "00713.TW"]
-            for c_etf in classic_etfs:
-                name = twstock.codes[c_etf.replace(".TW", "")].name if c_etf.replace(".TW", "") in twstock.codes else c_etf
-                market_tickers[c_etf] = (name, "ETF")
-
-            hot_keywords = ['半導體', '電腦', '電子零組件', '其他電子', '光電', '通信', '電機', '生技', '航運', '綠能', '雲端', '化學', '鋼鐵']
-            
-            for code, info in twstock.codes.items():
-                if len(code) == 4 and info.type == '股票':
-                    if any(k in info.group for k in hot_keywords):
-                        sym = f"{code}.TW" if info.market == '上市' else f"{code}.TWO"
-                        market_tickers[sym] = (info.name, info.group)
-                        
-            heavyweights = {
-                "2881.TW": ("富邦金", "金融保險"), "2882.TW": ("國泰金", "金融保險"), "2891.TW": ("中信金", "金融保險"),
-                "1301.TW": ("台塑", "塑膠工業"), "1303.TW": ("南亞", "塑膠工業"), "1216.TW": ("統一", "食品工業"),
-                "2886.TW": ("兆豐金", "金融保險"), "2884.TW": ("玉山金", "金融保險"), "2892.TW": ("第一金", "金融保險"),
-                "2207.TW": ("和泰車", "汽車工業"), "1101.TW": ("台泥", "水泥工業"), "9904.TW": ("寶成", "其他業")
-            }
-            market_tickers.update(heavyweights)
-
-            for sym, name in etf_tuple:
-                if sym not in market_tickers:
-                    market_tickers[sym] = (f"{name} (我的)", "ETF")
-                elif "(我的)" not in market_tickers[sym][0]:
-                    market_tickers[sym] = (f"{market_tickers[sym][0]} (我的)", "ETF")
-
-            target_symbols = list(market_tickers.keys())
-            
-            try:
-                df_dl = yf.download(target_symbols, period="5d", group_by="ticker", threads=True, progress=False, session=session)
-            except Exception:
-                return pd.DataFrame()
-                
-            data_list = []
-            
-            if isinstance(df_dl.columns, pd.MultiIndex):
-                available_symbols = df_dl.columns.levels[0]
-            else:
-                available_symbols = [sym for sym in target_symbols if sym in df_dl.columns]
-                
-            for sym in target_symbols:
-                try:
-                    if sym in available_symbols:
-                        if isinstance(df_dl.columns, pd.MultiIndex):
-                            hist = df_dl[sym].dropna()
-                        else:
-                            hist = df_dl.dropna()
-                            
-                        if len(hist) >= 2:
-                            curr = float(hist['Close'].iloc[-1])
-                            prev = float(hist['Close'].iloc[-2])
-                            vol = float(hist['Volume'].iloc[-1])
-                            
-                            diff = curr - prev
-                            pct = (diff / prev) * 100 if prev > 0 else 0
-                            
-                            data_list.append({
-                                "代號": sym.replace(".TW", "").replace(".TWO", ""),
-                                "名稱": market_tickers[sym][0],
-                                "產業別": market_tickers[sym][1], 
-                                "最新報價": round(curr, 2),
-                                "漲跌點數": round(diff, 2),
-                                "漲跌幅 (%)": round(pct, 2),
-                                "成交量 (張)": round(vol / 1000, 0) if not sym.startswith("^") else "大盤總量" 
-                            })
-                except Exception:
-                    pass
-                    
-            return pd.DataFrame(data_list)
-        except Exception:
-            return pd.DataFrame()
-            
-    with st.spinner("📡 系統啟動智能產業濾網，正對台股 800 大活躍飆股進行無死角掃描... (約需 10 秒)"):
-        df_market = get_smart_market_data(user_etfs)
-    
-    if not df_market.empty:
-        st.markdown("### 📊 大盤與櫃買指數表現")
-        idx_cols = st.columns(2)
-        twii_data = df_market[df_market["代號"] == "^TWII"]
-        twoii_data = df_market[df_market["代號"] == "^TWOII"]
-        
-        if not twii_data.empty:
-            twii = twii_data.iloc[0]
-            idx_cols[0].metric(label="📈 加權指數 (集中市場)", value=f"{twii['最新報價']:,.2f}", delta=f"{twii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
-        if not twoii_data.empty:
-            twoii = twoii_data.iloc[0]
-            idx_cols[1].metric(label="📈 櫃買指數 (中小型股)", value=f"{twoii['最新報價']:,.2f}", delta=f"{twoii['漲跌點數']:.2f} ({twii['漲跌幅 (%)']}%)", delta_color="inverse")
-            
-        st.divider()
-        
-        df_stocks = df_market[~df_market["代號"].isin(["^TWII", "^TWOII"])].copy()
-        
-        st.markdown("### 🚀 盤中飆股雷達 (漲幅 > 4% 且具流動性)")
-        df_corp = df_stocks[df_stocks["產業別"] != "ETF"].copy()
-        
-        df_soaring = df_corp[(df_corp["漲跌幅 (%)"] >= 4.0) & (df_corp["成交量 (張)"] != "大盤總量") & (pd.to_numeric(df_corp["成交量 (張)"], errors='coerce') >= 1000)]
-        df_soaring = df_soaring.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
-        
-        if not df_soaring.empty:
-            df_soaring.index = range(1, len(df_soaring) + 1)
-            st.table(df_soaring[["產業別", "名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({
-                "最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
-            }))
-        else:
-            st.info("💡 目前雷達掃描範圍內，暫無符合條件之強勢飆股。")
-
-        st.divider()
-        
-        st.markdown("### 🏢 產業板塊與主題表現 (含專屬持股)")
-        df_etf = df_stocks[df_stocks["產業別"] == "ETF"].copy()
-        df_etf = df_etf.sort_values(by="漲跌幅 (%)", ascending=False).head(30) 
-        df_etf.index = range(1, len(df_etf) + 1)
-        st.table(df_etf[["名稱", "最新報價", "漲跌點數", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌點數", "漲跌幅 (%)"]).format({
-            "最新報價": "{:.2f}", "漲跌點數": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"
-        }))
-        
-        st.divider()
-        
-        st.markdown("### 🔥 活躍資金焦點戰況 (Top 30)")
-        
-        df_corp["成交量 (張)"] = pd.to_numeric(df_corp["成交量 (張)"], errors='coerce').fillna(0)
-        top_vol = df_corp.sort_values(by="成交量 (張)", ascending=False).head(30)
-        
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            st.markdown("#### 🎯 焦點資金產業佔比 (依成交量 Top 30)")
-            sector_counts = top_vol['產業別'].value_counts().reset_index()
-            sector_counts.columns = ['產業別', '檔數']
-            
-            fig_pie = go.Figure(data=[go.Pie(labels=sector_counts['產業別'], values=sector_counts['檔數'], hole=.4, textinfo='label+percent')])
-            fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, showlegend=True)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with col_c2:
-            st.markdown("#### 📊 各大產業板塊平均漲跌幅 (活躍池統計)")
-            sector_perf = df_corp.groupby("產業別")["漲跌幅 (%)"].mean().reset_index()
-            sector_perf = sector_perf.sort_values(by="漲跌幅 (%)", ascending=False).head(15)
-            
-            fig_bar = go.Figure(data=[go.Bar(
-                x=sector_perf['產業別'], 
-                y=sector_perf['漲跌幅 (%)'],
-                marker_color=['#FF4B4B' if val > 0 else '#00D26A' for val in sector_perf['漲跌幅 (%)']],
-                text=[f"{val:.2f}%" for val in sector_perf['漲跌幅 (%)']], textposition='outside'
-            )])
-            fig_bar.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, yaxis=dict(title="平均漲跌幅 (%)"))
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
-        st.markdown("---")
-        
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
-            st.markdown("#### 🏆 強勢領漲排行 (排除低量股)")
-            valid_gainers = df_corp[df_corp["成交量 (張)"] >= 1000]
-            top_gainers = valid_gainers.sort_values(by="漲跌幅 (%)", ascending=False).head(30)
-            top_gainers.index = range(1, len(top_gainers) + 1)
-            st.table(top_gainers[["產業別", "名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
-            
-        with col_r2:
-            st.markdown("#### 📉 弱勢回檔排行 (排除低量股)")
-            valid_losers = df_corp[df_corp["成交量 (張)"] >= 1000]
-            top_losers = valid_losers.sort_values(by="漲跌幅 (%)", ascending=True).head(30)
-            top_losers.index = range(1, len(top_losers) + 1)
-            st.table(top_losers[["產業別", "名稱", "最新報價", "漲跌幅 (%)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}"}))
-            
-        st.markdown("#### 💥 吸金人氣王 (成交量 Top 30)")
-        top_vol.index = range(1, len(top_vol) + 1)
-        st.table(top_vol[["產業別", "名稱", "最新報價", "漲跌幅 (%)", "成交量 (張)"]].style.apply(color_tw_col, subset=["漲跌幅 (%)"]).format({"最新報價": "{:.2f}", "漲跌幅 (%)": "{:.2f}", "成交量 (張)": "{:,.0f}"}))
-        
-    else:
-        st.error("⚠️ 暫時無法取得大盤資料 (即使偽裝仍受限)，請稍後再重整頁面。")
+with
