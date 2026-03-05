@@ -1,0 +1,18 @@
+name: ⏰ 每日早盤喚醒鬧鐘
+
+on:
+  schedule:
+    # 這是 UTC 時間的 00:55，換算成台灣時間剛好是早上 08:55
+    # 1-5 代表只有週一到週五 (開盤日) 才會執行
+    - cron: '55 0 * * 1-5'
+  
+  # 允許你手動在 GitHub 點擊按鈕測試執行
+  workflow_dispatch:
+
+jobs:
+  ping_app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 呼叫 Streamlit 網址喚醒主機
+        # 👇 ⚠️ 注意：請把下面的網址換成你神器的「真實網址」
+        run: curl -s https://my-stock-app-gxuqnghrjbtku2oewavkh9.streamlit.app/ > /dev/null
