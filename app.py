@@ -9,7 +9,6 @@ import twstock
 import warnings
 import requests
 import time
-import numpy as np
 
 # 🛡️ 終極偽裝術
 session = requests.Session()
@@ -25,6 +24,7 @@ st.set_page_config(page_title="帥順股市分析與資產管理神器", layout=
 FUGLE_API_KEY = st.secrets.get("FUGLE_API_KEY", "YWYyMmIyOTQtNzViZi00YzBjLTk3YjUtYTE0YjQ2MTNiNGUwIGNkYzQ5MWI0LTdkNGYtNGMwOC04OTJhLTBmOTJhMmUxZTFhYw==")
 
 def fetch_fugle_price(symbol_code, api_key):
+    """抓取富果簡單報價 (用於第二頁投資組合)"""
     if not api_key: return None, None
     pure_code = symbol_code.split('.')[0]
     url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
@@ -39,6 +39,27 @@ def fetch_fugle_price(symbol_code, api_key):
             if curr and prev: return float(curr), float(prev)
     except Exception: pass
     return None, None
+
+def fetch_fugle_kline_today(symbol_code, api_key):
+    """抓取富果完整 OHLCV 報價 (用於第一頁 K 線圖融合)"""
+    if not api_key: return None
+    pure_code = symbol_code.split('.')[0]
+    url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{pure_code}"
+    try:
+        res = requests.get(url, headers={"X-API-KEY": api_key}, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            c = data.get("lastPrice") or data.get("closePrice")
+            if not c and data.get("lastTrade"): c = data.get("lastTrade").get("price")
+            o = data.get("openPrice") or c
+            h = data.get("highPrice") or c
+            l = data.get("lowPrice") or c
+            v = data.get("total", {}).get("tradeVolume", 0)
+            if c:
+                # 富果的成交量單位是「張」，Yahoo 單位是「股」，所以這裡 * 1000 同步單位
+                return {"Open": float(o), "High": float(h), "Low": float(l), "Close": float(c), "Volume": v * 1000}
+    except Exception: pass
+    return None
 
 # ==========================================
 # 🎨 專屬介面優化
@@ -64,14 +85,8 @@ def load_portfolio(url):
                 symbol = str(row['代號']).strip()
                 pure_code = symbol.split('.')[0]
                 stock_name = twstock.codes[pure_code].name if pure_code in twstock.codes else str(row.get('股票名稱', '未知')).strip()
-                
-                # 🌟 修復 nan 問題：雙重防呆機制，只要是空白或 nan，一律當作「本人」
                 raw_cat = str(row.get('分類', '')).strip()
-                if pd.notna(row.get('分類')) and raw_cat != "" and raw_cat.lower() != "nan":
-                    category = raw_cat
-                else:
-                    category = "本人"
-                    
+                category = raw_cat if pd.notna(row.get('分類')) and raw_cat != "" and raw_cat.lower() != "nan" else "本人"
                 portfolio.append({'symbol': symbol, 'cost': float(row['成本']), 'shares': int(row['股數']), 'name': stock_name, 'category': category})
         return portfolio
     except Exception: return []
@@ -80,7 +95,7 @@ MY_PORTFOLIO = load_portfolio(SHEET_URL)
 tab1, tab2, tab3 = st.tabs(["📈 個股技術分析", "💰 我的投資組合", "🌍 台股主力 800 飆股雷達與觀測站"])
 
 # ----------------------------------------
-# 分頁 1：個股技術分析與基本面
+# 🌟 分頁 1：個股技術分析與基本面 (導入富果即時 K 線融合技術)
 # ----------------------------------------
 with tab1:
     unique_symbols = list(set([p['symbol'] for p in MY_PORTFOLIO]))
@@ -102,15 +117,27 @@ with tab1:
     st.markdown("---")
     if ticker_symbol:
         info, df_raw = {}, pd.DataFrame()
+        
+        # 先抓取 Yahoo 歷史資料與基本面
         try:
             ticker_data = yf.Ticker(ticker_symbol, session=session) 
             try: info = ticker_data.info
-            except Exception: st.warning("⚠️ Yahoo 財經目前限制基本面讀取，請專注於下方技術線圖。")
+            except Exception: pass
             try: df_raw = ticker_data.history(period="10y")
-            except Exception: st.error("⚠️ 無法取得 K 線報價資料，請稍後再試。")
-        except Exception: st.error("⚠️ Yahoo 財經伺服器阻擋了此股票的連線要求，請稍後再重整頁面。")
+            except Exception: st.error("⚠️ 無法取得歷史 K 線報價資料，請稍後再試。")
+        except Exception: st.error("⚠️ Yahoo 財經伺服器阻擋連線要求，請稍後重整。")
+        
+        # ⚡ 富果魔法：抓取零時差的今日 OHLCV
+        fugle_today = fetch_fugle_kline_today(ticker_symbol, FUGLE_API_KEY)
         
         st.subheader(f"🏢 **{display_name}** - 基本面與財務指標 (最新季報)")
+        
+        # 顯示富果即時報價提醒
+        if fugle_today:
+            st.success(f"⚡ 已成功啟用富果 (Fugle) 零時差報價引擎，目前最新股價：**{fugle_today['Close']}**，技術線圖與指標皆為最即時狀態！")
+        elif not df_raw.empty:
+            st.info("💡 目前顯示為 Yahoo 延遲報價。")
+            
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             st.metric("毛利率 (Gross Margin)", fmt_pct(info.get('grossMargins')))
@@ -139,6 +166,28 @@ with tab1:
         
         if not df_raw.empty:
             df_raw.index = df_raw.index.tz_localize(None)
+            
+            # ⚡ 歷史與即時的完美融合 (Data Fusion)
+            if fugle_today and tf_option == "日線":
+                last_date = df_raw.index[-1].date()
+                today_date = pd.Timestamp.now('Asia/Taipei').date()
+                
+                if last_date == today_date:
+                    # 如果 Yahoo 已經有今天的格子，直接覆蓋成富果的最精準數字
+                    df_raw.iloc[-1, df_raw.columns.get_loc('Open')] = fugle_today['Open']
+                    df_raw.iloc[-1, df_raw.columns.get_loc('High')] = fugle_today['High']
+                    df_raw.iloc[-1, df_raw.columns.get_loc('Low')] = fugle_today['Low']
+                    df_raw.iloc[-1, df_raw.columns.get_loc('Close')] = fugle_today['Close']
+                    df_raw.iloc[-1, df_raw.columns.get_loc('Volume')] = fugle_today['Volume']
+                else:
+                    # 如果 Yahoo 還沒生成今天的格子，我們幫它無縫接軌新增一格
+                    new_row = pd.DataFrame({
+                        'Open': [fugle_today['Open']], 'High': [fugle_today['High']], 
+                        'Low': [fugle_today['Low']], 'Close': [fugle_today['Close']], 
+                        'Volume': [fugle_today['Volume']]
+                    }, index=[pd.Timestamp.now('Asia/Taipei')])
+                    df_raw = pd.concat([df_raw, new_row])
+            
             if tf_option == "日線": df = df_raw.copy()
             elif tf_option == "週線": df = df_raw.resample('W-FRI').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
             elif tf_option == "月線": df = df_raw.resample('ME').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'}).dropna()
@@ -215,7 +264,7 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False})
 
 # ----------------------------------------
-# 🌟 分頁 2：我的投資組合 (富果即時 API + 自動更新)
+# 🌟 分頁 2：我的投資組合
 # ----------------------------------------
 with tab2:
     col_info, col_toggle = st.columns([2, 1])
@@ -252,8 +301,7 @@ with tab2:
                 buy_fee = max(20, stock_cost_raw * 0.001425 * discount)
                 sell_fee = max(20, stock_value_raw * 0.001425 * discount)
                 
-                if symbol.startswith("00"): tax = stock_value_raw * 0.001; type_label = "ETF"
-                else: tax = stock_value_raw * 0.003; type_label = "個股"
+                type_label, tax = ("ETF", stock_value_raw * 0.001) if symbol.startswith("00") else ("個股", stock_value_raw * 0.003)
                 
                 true_stock_cost = stock_cost_raw + buy_fee
                 true_profit = stock_value_raw - stock_cost_raw - buy_fee - sell_fee - tax
@@ -270,12 +318,9 @@ with tab2:
         my_bar.empty()
         
         grouped_data = {}
-        for p in portfolio_data:
-            grouped_data.setdefault(p["category"], []).append(p)
+        for p in portfolio_data: grouped_data.setdefault(p["category"], []).append(p)
             
-        def sort_key(cat): return 0 if cat in ["本人", "帥順"] else 1
-        
-        for cat in sorted(grouped_data.keys(), key=sort_key):
+        for cat in sorted(grouped_data.keys(), key=lambda c: 0 if c in ["本人", "帥順"] else 1):
             cat_records = grouped_data[cat]
             cat_total_cost = sum([p["總成本"] for p in cat_records])
             cat_total_value = sum([p["目前市值"] for p in cat_records])
@@ -418,7 +463,7 @@ with tab3:
         st.error("⚠️ 暫時無法取得大盤資料，請稍後再重整頁面。")
 
 # ==========================================
-# 🔄 盤中掛機自動更新邏輯 (安全觸發區)
+# 🔄 盤中掛機自動更新邏輯
 # ==========================================
 try:
     if auto_refresh:
